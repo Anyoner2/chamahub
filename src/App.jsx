@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './App.css'
 
 const contributions = [
@@ -15,11 +15,16 @@ const members = [
 ]
 
 function Dashboard({ onBack }) {
-  const [dashboardContributions, setDashboardContributions] = useState(contributions)
-  const [balance, setBalance] = useState(428500)
+  const [dashboardContributions, setDashboardContributions] = useState(() => JSON.parse(localStorage.getItem('chamahub-contributions') || 'null') || contributions)
+  const [balance, setBalance] = useState(() => Number(localStorage.getItem('chamahub-balance')) || 428500)
   const [showContributionForm, setShowContributionForm] = useState(false)
   const [detailView, setDetailView] = useState(null)
   const [notice, setNotice] = useState('')
+
+  useEffect(() => {
+    localStorage.setItem('chamahub-contributions', JSON.stringify(dashboardContributions))
+    localStorage.setItem('chamahub-balance', String(balance))
+  }, [balance, dashboardContributions])
 
   function handleContribution(event) {
     const formData = new FormData(event.currentTarget)
