@@ -17,12 +17,24 @@ const initialMembers = [
 const defaultGoal = { name: 'New meeting space', target: 500000, saved: 360000 }
 
 function Dashboard({ onBack }) {
-  const [dashboardContributions, setDashboardContributions] = useState(() => JSON.parse(localStorage.getItem('chamahub-contributions') || 'null') || contributions)
-  const [dashboardMembers, setDashboardMembers] = useState(() => JSON.parse(localStorage.getItem('chamahub-members') || 'null') || initialMembers)
+  const [dashboardContributions, setDashboardContributions] = useState(() => {
+    const saved = localStorage.getItem('chamahub-contributions')
+    return saved ? JSON.parse(saved) : contributions
+  })
+
+  const [dashboardMembers, setDashboardMembers] = useState(() => {
+    const saved = localStorage.getItem('chamahub-members')
+    return saved ? JSON.parse(saved) : initialMembers
+  })
+
   const [balance, setBalance] = useState(() => Number(localStorage.getItem('chamahub-balance')) || 428500)
-  const [goal, setGoal] = useState(() => JSON.parse(localStorage.getItem('chamahub-goal') || 'null') || defaultGoal)
+  const [goal, setGoal] = useState(() => {
+    const saved = localStorage.getItem('chamahub-goal')
+    return saved ? JSON.parse(saved) : defaultGoal
+  })
   const [showContributionForm, setShowContributionForm] = useState(false)
   const [showGoalForm, setShowGoalForm] = useState(false)
+  const [showMemberForm, setShowMemberForm] = useState(false)
   const [detailView, setDetailView] = useState(null)
   const [notice, setNotice] = useState('')
 
@@ -33,11 +45,28 @@ function Dashboard({ onBack }) {
     localStorage.setItem('chamahub-goal', JSON.stringify(goal))
   }, [balance, dashboardContributions, dashboardMembers, goal])
 
+  function parseCurrency(value) {
+    return Number(String(value).replace(/[^0-9]/g, '')) || 0
+  }
+
+  function getInitials(name) {
+    const parts = String(name).trim().split(/\s+/).filter(Boolean)
+    if (!parts.length) return 'CH'
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+    return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+  }
+
+  function shortName(name) {
+    const parts = String(name).trim().split(/\s+/).filter(Boolean)
+    if (parts.length === 1) return parts[0]
+    return `${parts[0]} ${parts[parts.length - 1][0]}.`
+  }
+
   function handleGoal(event) {
     const formData = new FormData(event.currentTarget)
     const name = String(formData.get('goal-name')).trim()
-    const target = Number(String(formData.get('goal-target')).replace(/[^0-9]/g, '')) || 0
-    const saved = Number(String(formData.get('goal-saved')).replace(/[^0-9]/g, '')) || 0
+    const target = parseCurrency(formData.get('goal-target'))
+    const saved = parseCurrency(formData.get('goal-saved'))
 
     event.preventDefault()
     if (name && target > 0 && saved >= 0 && saved <= target) {
@@ -51,20 +80,61 @@ function Dashboard({ onBack }) {
 
   function handleContribution(event) {
     const formData = new FormData(event.currentTarget)
-    const amount = Number(String(formData.get('amount')).replace(/[^0-9]/g, '')) || 0
-    const memberName = formData.get('member')
+    const amount = parseCurrency(formData.get('amount'))
+    const memberName = String(formData.get('member') || '').trim()
     const member = dashboardMembers.find((item) => item.name === memberName)
 
     event.preventDefault()
-    setShowContributionForm(false)
     if (amount > 0 && member) {
+      setShowContributionForm(false)
       setBalance((currentBalance) => currentBalance + amount)
       setDashboardMembers((currentMembers) => currentMembers.map((item) => item.name === member.name ? { ...item, status: 'Paid this month' } : item))
-      setDashboardContributions((currentContributions) => [{ member: member.name.replace(/ .*/, ' ') + member.name.split(' ').at(-1)[0] + '.', initials: member.initials, date: 'Just now', amount: `KES ${amount.toLocaleString('en-KE')}`, tone: member.tone }, ...currentContributions])
+      setDashboardContributions((currentContributions) => [{
+        member: shortName(member.name),
+        initials: member.initials,
+        date: 'Just now',
+        amount: `KES ${amount.toLocaleString('en-KE')}`,
+        tone: member.tone,
+      }, ...currentContributions])
+      setGoal((currentGoal) => ({
+        ...currentGoal,
+        saved: Math.min(currentGoal.target, (currentGoal.saved || 0) + amount),
+      }))
       setNotice(`Contribution recorded for ${member.name}.`)
-    } else {
-      setNotice('Enter a contribution amount to continue.')
+      return
     }
+
+    setShowContributionForm(false)
+    setNotice('Enter a valid contribution amount and member to continue.')
+  }
+
+  function handleMember(event) {
+    const formData = new FormData(event.currentTarget)
+    const name = String(formData.get('member-name')).trim()
+    const memberTone = ['coral', 'sage', 'peach', 'gold'][dashboardMembers.length % 4]
+
+    event.preventDefault()
+    if (!name) {
+      setNotice('Please enter a member name.')
+      return
+    }
+
+    const duplicateMember = dashboardMembers.some((item) => item.name.toLowerCase() === name.toLowerCase())
+    if (duplicateMember) {
+      setNotice('This member already exists in your chama.')
+      return
+    }
+
+    const nextMember = {
+      name,
+      initials: getInitials(name),
+      status: 'Awaiting first contribution',
+      tone: memberTone,
+    }
+
+    setDashboardMembers((currentMembers) => [...currentMembers, nextMember])
+    setShowMemberForm(false)
+    setNotice(`${name} was added to the chama.`)
   }
 
   return (
@@ -80,15 +150,16 @@ function Dashboard({ onBack }) {
 
         <div className="dashboard-grid">
           <article className="dashboard-card balance-panel"><div className="dashboard-card-label"><span>Total chama balance</span><span className="trend-label">↗ 12.8%</span></div><strong>KES {balance.toLocaleString('en-KE')}</strong><p>Up KES 48,500 since last month</p><div className="mini-chart"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
-          <article className="dashboard-card goal-panel"><div className="dashboard-card-label"><span>Shared goal</span><span>{Math.round((goal.saved / goal.target) * 100)}%</span></div><h2>{goal.name}</h2><p>KES {goal.saved.toLocaleString('en-KE')} of KES {goal.target.toLocaleString('en-KE')}</p><div className="progress-track"><span style={{ width: `${(goal.saved / goal.target) * 100}%` }}></span></div><div className="goal-footer"><span>Target: Dec 2026</span><strong>KES {(goal.target - goal.saved).toLocaleString('en-KE')} left</strong></div><button className="goal-edit-button" onClick={() => { setNotice(''); setShowGoalForm(true) }}>Update goal <span>↗</span></button></article>
+          <article className="dashboard-card goal-panel"><div className="dashboard-card-label"><span>Shared goal</span><span>{Math.min(100, Math.round((goal.saved / goal.target) * 100))}%</span></div><h2>{goal.name}</h2><p>KES {goal.saved.toLocaleString('en-KE')} of KES {goal.target.toLocaleString('en-KE')}</p><div className="progress-track"><span style={{ width: `${Math.min(100, (goal.saved / goal.target) * 100)}%` }}></span></div><div className="goal-footer"><span>Target: Dec 2026</span><strong>KES {(goal.target - goal.saved).toLocaleString('en-KE')} left</strong></div><button className="goal-edit-button" onClick={() => { setNotice(''); setShowGoalForm(true) }}>Update goal <span>↗</span></button></article>
           <article className="dashboard-card contribution-panel"><div className="panel-heading"><div><span className="card-kicker">Activity</span><h2>Recent contributions</h2></div><button className="quiet-button" onClick={() => setDetailView('activity')}>View all <span>↗</span></button></div><div className="contribution-list">{dashboardContributions.slice(0, 3).map((contribution, index) => <div className="contribution-row" key={`${contribution.member}-${contribution.date}-${index}`}><span className={`avatar ${contribution.tone}`}>{contribution.initials}</span><div><strong>{contribution.member}</strong><small>{contribution.date}</small></div><b>{contribution.amount}</b></div>)}</div></article>
-          <article className="dashboard-card members-panel"><div className="panel-heading"><div><span className="card-kicker">Your circle</span><h2>Members <span className="count-badge">12</span></h2></div><button className="quiet-button" onClick={() => setDetailView('members')}>Manage <span>↗</span></button></div><div className="member-list">{dashboardMembers.map((member) => <div className="member-row" key={member.name}><span className={`avatar ${member.tone}`}>{member.initials}</span><div><strong>{member.name}</strong><small className={member.status.startsWith('Due') ? 'due-status' : ''}>{member.status}</small></div><span className="member-menu">•••</span></div>)}</div></article>
+          <article className="dashboard-card members-panel"><div className="panel-heading"><div><span className="card-kicker">Your circle</span><h2>Members <span className="count-badge">{dashboardMembers.length}</span></h2></div><button className="quiet-button" onClick={() => setDetailView('members')}>Manage <span>↗</span></button></div><div className="member-list">{dashboardMembers.slice(0, 4).map((member) => <div className="member-row" key={member.name}><span className={`avatar ${member.tone}`}>{member.initials}</span><div><strong>{member.name}</strong><small className={member.status.startsWith('Due') ? 'due-status' : ''}>{member.status}</small></div><span className="member-menu">•••</span></div>)}</div></article>
         </div>
       </section>
 
-      {showContributionForm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowContributionForm(false) }}><form className="contribution-modal" onSubmit={handleContribution}><button type="button" className="modal-close" aria-label="Close contribution form" onClick={() => setShowContributionForm(false)}>×</button><span className="card-kicker">New activity</span><h2>Record a contribution</h2><p>Add a payment to keep the circle in sync.</p><label>Member<select name="member" defaultValue="Amina Mohamed">{dashboardMembers.map((member) => <option key={member.name}>{member.name}</option>)}</select></label><label>Amount<input name="amount" type="text" inputMode="numeric" defaultValue="KES 5,000" /></label><button className="primary-button" type="submit">Save contribution <span>↗</span></button></form></div>}
+      {showContributionForm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowContributionForm(false) }}><form className="contribution-modal" onSubmit={handleContribution}><button type="button" className="modal-close" aria-label="Close contribution form" onClick={() => setShowContributionForm(false)}>×</button><span className="card-kicker">New activity</span><h2>Record a contribution</h2><p>Add a payment to keep the circle in sync.</p><label>Member<select name="member" defaultValue={dashboardMembers[0]?.name || ''}>{dashboardMembers.map((member) => <option key={member.name} value={member.name}>{member.name}</option>)}</select></label><label>Amount<input name="amount" type="text" inputMode="numeric" defaultValue="KES 5,000" /></label><button className="primary-button" type="submit">Save contribution <span>↗</span></button></form></div>}
       {showGoalForm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowGoalForm(false) }}><form className="contribution-modal" onSubmit={handleGoal}><button type="button" className="modal-close" aria-label="Close goal form" onClick={() => setShowGoalForm(false)}>×</button><span className="card-kicker">Shared goal</span><h2>Update your goal</h2><p>Give the chama a clear target to move toward together.</p><label>Goal name<input name="goal-name" type="text" defaultValue={goal.name} /></label><label>Target amount<input name="goal-target" type="text" inputMode="numeric" defaultValue={`KES ${goal.target.toLocaleString('en-KE')}`} /></label><label>Saved so far<input name="goal-saved" type="text" inputMode="numeric" defaultValue={`KES ${goal.saved.toLocaleString('en-KE')}`} /></label><button className="primary-button" type="submit">Save goal <span>↗</span></button></form></div>}
-      {detailView && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetailView(null) }}><section className="contribution-modal detail-modal" aria-labelledby="detail-title"><button type="button" className="modal-close" aria-label="Close details" onClick={() => setDetailView(null)}>×</button><span className="card-kicker">{detailView === 'activity' ? 'Activity log' : 'Your circle'}</span><h2 id="detail-title">{detailView === 'activity' ? 'All contributions' : 'Manage members'}</h2><p>{detailView === 'activity' ? 'A clear record of every recent payment.' : 'See who is up to date and who needs a reminder.'}</p>{detailView === 'activity' ? <div className="contribution-list detail-list">{dashboardContributions.map((contribution, index) => <div className="contribution-row" key={`${contribution.member}-${contribution.date}-${index}`}><span className={`avatar ${contribution.tone}`}>{contribution.initials}</span><div><strong>{contribution.member}</strong><small>{contribution.date}</small></div><b>{contribution.amount}</b></div>)}</div> : <div className="member-list detail-list">{dashboardMembers.map((member) => <div className="member-row" key={member.name}><span className={`avatar ${member.tone}`}>{member.initials}</span><div><strong>{member.name}</strong><small className={member.status.startsWith('Due') ? 'due-status' : ''}>{member.status}</small></div><button className="remind-button" onClick={() => { setDetailView(null); setNotice(`Reminder sent to ${member.name}.`) }}>Remind</button></div>)}</div>}</section></div>}
+      {showMemberForm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowMemberForm(false) }}><form className="contribution-modal" onSubmit={handleMember}><button type="button" className="modal-close" aria-label="Close member form" onClick={() => setShowMemberForm(false)}>×</button><span className="card-kicker">New member</span><h2>Add to your circle</h2><p>Invite a new chama member and keep the group moving together.</p><label>Full name<input name="member-name" type="text" placeholder="e.g. Grace Waweru" /></label><button className="primary-button" type="submit">Add member <span>↗</span></button></form></div>}
+      {detailView && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetailView(null) }}><section className="contribution-modal detail-modal" aria-labelledby="detail-title"><button type="button" className="modal-close" aria-label="Close details" onClick={() => setDetailView(null)}>×</button><span className="card-kicker">{detailView === 'activity' ? 'Activity log' : 'Your circle'}</span><h2 id="detail-title">{detailView === 'activity' ? 'All contributions' : 'Manage members'}</h2><p>{detailView === 'activity' ? 'A clear record of every recent payment.' : 'See who is up to date and who needs a reminder.'}</p>{detailView === 'activity' ? <div className="contribution-list detail-list">{dashboardContributions.map((contribution, index) => <div className="contribution-row" key={`${contribution.member}-${contribution.date}-${index}`}><span className={`avatar ${contribution.tone}`}>{contribution.initials}</span><div><strong>{contribution.member}</strong><small>{contribution.date}</small></div><b>{contribution.amount}</b></div>)}</div> : <div className="member-list detail-list"><button className="primary-button member-add-button" type="button" onClick={() => { setShowMemberForm(true); setDetailView(null) }}>+ Add member</button>{dashboardMembers.map((member) => <div className="member-row" key={member.name}><span className={`avatar ${member.tone}`}>{member.initials}</span><div><strong>{member.name}</strong><small className={member.status.startsWith('Due') ? 'due-status' : ''}>{member.status}</small></div><button className="remind-button" onClick={() => { setDetailView(null); setNotice(`Reminder sent to ${member.name}.`) }}>Remind</button></div>)}</div>}</section></div>}
     </main>
   )
 }
