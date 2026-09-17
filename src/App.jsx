@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import './App.css'
+import { createChamaRecord, getLocalChamaState, saveChamaRecord, saveLocalChamaState } from './lib/chamaStore'
+import { isSupabaseConfigured } from './lib/supabase'
 
 const contributions = [
   { member: 'Amina M.', initials: 'AM', date: 'Today, 09:42', amount: 'KES 5,000', tone: 'coral' },
@@ -16,7 +18,7 @@ const initialMembers = [
 
 const defaultGoal = { name: 'New meeting space', target: 500000, saved: 360000 }
 
-function Dashboard({ onBack }) {
+function Dashboard({ onBack, chamaName }) {
   const [dashboardContributions, setDashboardContributions] = useState(() => {
     const saved = localStorage.getItem('chamahub-contributions')
     return saved ? JSON.parse(saved) : contributions
@@ -43,7 +45,19 @@ function Dashboard({ onBack }) {
     localStorage.setItem('chamahub-members', JSON.stringify(dashboardMembers))
     localStorage.setItem('chamahub-balance', String(balance))
     localStorage.setItem('chamahub-goal', JSON.stringify(goal))
-  }, [balance, dashboardContributions, dashboardMembers, goal])
+
+    const chamaId = localStorage.getItem('chamahub-chama-id')
+    if (chamaId) {
+      saveChamaRecord(chamaId, {
+        name: chamaName,
+        city: localStorage.getItem('chamahub-chama-city') || '',
+        goal,
+        members: dashboardMembers,
+        contributions: dashboardContributions,
+        balance,
+      }).catch(() => console.error('Unable to sync chama changes with Supabase.'))
+    }
+  }, [balance, chamaName, dashboardContributions, dashboardMembers, goal])
 
   function parseCurrency(value) {
     return Number(String(value).replace(/[^0-9]/g, '')) || 0
@@ -141,7 +155,7 @@ function Dashboard({ onBack }) {
     <main className="dashboard-shell">
       <nav className="dashboard-nav" aria-label="Dashboard navigation">
         <button className="brand dashboard-brand" onClick={onBack} aria-label="Return to ChamaHub home"><span className="brand-mark">C</span><span>ChamaHub</span></button>
-        <div className="dashboard-nav-meta"><span className="status-dot"></span><span>Kitui Women&apos;s Circle</span><span className="nav-divider"></span><button className="profile-chip">AM</button></div>
+        <div className="dashboard-nav-meta"><span className="status-dot"></span><span>{chamaName}</span><span className="nav-divider"></span><button className="profile-chip">AM</button></div>
       </nav>
 
       <section className="dashboard-content">
@@ -166,26 +180,116 @@ function Dashboard({ onBack }) {
 
 function App() {
   const [showDashboard, setShowDashboard] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
+  const [showMemberSetup, setShowMemberSetup] = useState(false)
+  const [chamaName, setChamaName] = useState(() => getLocalChamaState().name)
 
-  if (showDashboard) return <Dashboard onBack={() => setShowDashboard(false)} />
+  function handleCreateChama(event) {
+    const formData = new FormData(event.currentTarget)
+    const name = String(formData.get('chama-name') || '').trim()
+    const city = String(formData.get('chama-city') || '').trim()
+    const goalName = String(formData.get('goal-name') || '').trim() || 'New meeting space'
+    const target = Number(String(formData.get('goal-target') || '').replace(/[^0-9]/g, '')) || 500000
+
+    event.preventDefault()
+
+    if (!name) {
+      return
+    }
+
+    const goal = { name: goalName, target, saved: 0 }
+    const localState = getLocalChamaState()
+    saveLocalChamaState({ ...localState, name, city, goal })
+    setChamaName(name)
+    setShowOnboarding(false)
+    setShowMemberSetup(true)
+  }
+
+  function handleMemberSetup(event) {
+    const formData = new FormData(event.currentTarget)
+    const memberNames = ['member-1', 'member-2', 'member-3', 'member-4']
+      .map((field) => String(formData.get(field) || '').trim())
+      .filter(Boolean)
+
+    event.preventDefault()
+
+    const members = memberNames.length > 0
+      ? memberNames.map((name, index) => ({
+          name,
+          initials: name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'CH',
+          status: index === 0 ? 'Paid this month' : 'Awaiting first contribution',
+          tone: ['coral', 'sage', 'peach', 'gold'][index % 4],
+        }))
+      : [{
+          name: 'Amina Mohamed',
+          initials: 'AM',
+          status: 'Paid this month',
+          tone: 'coral',
+        }]
+
+    const state = getLocalChamaState()
+    const nextState = { ...state, members }
+    saveLocalChamaState(nextState)
+    if (isSupabaseConfigured) {
+      createChamaRecord(nextState)
+        .then((record) => localStorage.setItem('chamahub-chama-id', record.id))
+        .catch(() => console.error('Unable to sync chama with Supabase.'))
+    }
+    setShowMemberSetup(false)
+    setShowDashboard(true)
+  }
+
+  if (showDashboard) return <Dashboard onBack={() => setShowDashboard(false)} chamaName={chamaName} />
 
   return (
     <main>
       <nav className="nav" aria-label="Main navigation">
         <a className="brand" href="#home" aria-label="ChamaHub home"><span className="brand-mark">C</span><span>ChamaHub</span></a>
         <div className="nav-links"><a href="#how-it-works">How it works</a><a href="#features">Features</a><a href="#about">About us</a></div>
-        <button className="nav-action" onClick={() => setShowDashboard(true)}>Open dashboard <span aria-hidden="true">↗</span></button>
+        <button className="nav-action" onClick={() => setShowOnboarding(true)}>Open dashboard <span aria-hidden="true">↗</span></button>
       </nav>
 
       <section className="hero-section" id="home">
-        <div className="hero-copy"><p className="eyebrow"><span></span> Built for groups that grow together</p><h1>Money moves better <em>together.</em></h1><p className="hero-description">ChamaHub gives your chama one calm place to save, plan, and turn shared goals into something real.</p><div className="hero-actions"><button className="primary-button" onClick={() => setShowDashboard(true)}>Start your chama <span aria-hidden="true">↗</span></button><a className="text-link" href="#how-it-works">See how it works <span aria-hidden="true">↓</span></a></div><div className="member-note"><div className="avatars"><span>AM</span><span>JO</span><span>NK</span><span>+</span></div><p><strong>2,400+</strong> members already building together</p></div></div>
+        <div className="hero-copy"><p className="eyebrow"><span></span> Built for groups that grow together</p><h1>Money moves better <em>together.</em></h1><p className="hero-description">ChamaHub gives your chama one calm place to save, plan, and turn shared goals into something real.</p><div className="hero-actions"><button className="primary-button" onClick={() => setShowOnboarding(true)}>Start your chama <span aria-hidden="true">↗</span></button><a className="text-link" href="#how-it-works">See how it works <span aria-hidden="true">↓</span></a></div><div className="member-note"><div className="avatars"><span>AM</span><span>JO</span><span>NK</span><span>+</span></div><p><strong>2,400+</strong> members already building together</p></div></div>
         <div className="hero-visual" aria-label="ChamaHub savings overview"><div className="sun-shape"></div><div className="balance-card"><div className="card-top"><span>Total chama balance</span><span className="card-menu">•••</span></div><strong>KES 428,500</strong><div className="balance-meta"><span>↗ 12.8% this month</span><span>Updated today</span></div><div className="chart"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><b></b></div></div><div className="goal-card"><span className="goal-icon">↗</span><div><span>Next goal</span><strong>New meeting space</strong></div><b>72%</b></div><div className="floating-note"><span>✦</span><div><strong>Goal unlocked</strong><small>Holiday fund is ready</small></div></div></div>
       </section>
 
       <section className="ticker" id="about"><span>Trusted by chamas across Kenya</span><i></i><span>Save with purpose</span><i></i><span>Grow with confidence</span><i></i><span>Move as one</span></section>
-      <section className="feature-section" id="features"><div className="section-heading"><p className="eyebrow"><span></span> Everything in one place</p><h2>A better rhythm for<br /><em>shared money.</em></h2></div><div className="feature-grid"><article><span className="feature-number">01</span><h3>See the full picture</h3><p>Know exactly what is in, what is out, and what is next. No more spreadsheets hiding in someone&apos;s phone.</p><button className="feature-link" onClick={() => setShowDashboard(true)}>Explore finances <span>↗</span></button></article><article><span className="feature-number">02</span><h3>Keep everyone in sync</h3><p>Contributions, reminders, and decisions stay visible to the whole group. Trust grows when everyone can see.</p><button className="feature-link" onClick={() => setShowDashboard(true)}>Meet your members <span>↗</span></button></article><article><span className="feature-number">03</span><h3>Make goals feel real</h3><p>Turn a shared idea into a tracked goal, with progress your chama can feel every time you open the app.</p><button className="feature-link" onClick={() => setShowDashboard(true)}>Set a goal <span>↗</span></button></article></div></section>
-      <section className="bottom-cta" id="how-it-works"><div><p className="eyebrow"><span></span> Your next chapter starts here</p><h2>Ready to move<br /><em>as one?</em></h2></div><button className="primary-button light-button" onClick={() => setShowDashboard(true)}>Open your dashboard <span aria-hidden="true">↗</span></button></section>
+      <section className="feature-section" id="features"><div className="section-heading"><p className="eyebrow"><span></span> Everything in one place</p><h2>A better rhythm for<br /><em>shared money.</em></h2></div><div className="feature-grid"><article><span className="feature-number">01</span><h3>See the full picture</h3><p>Know exactly what is in, what is out, and what is next. No more spreadsheets hiding in someone&apos;s phone.</p><button className="feature-link" onClick={() => setShowOnboarding(true)}>Explore finances <span>↗</span></button></article><article><span className="feature-number">02</span><h3>Keep everyone in sync</h3><p>Contributions, reminders, and decisions stay visible to the whole group. Trust grows when everyone can see.</p><button className="feature-link" onClick={() => setShowOnboarding(true)}>Meet your members <span>↗</span></button></article><article><span className="feature-number">03</span><h3>Make goals feel real</h3><p>Turn a shared idea into a tracked goal, with progress your chama can feel every time you open the app.</p><button className="feature-link" onClick={() => setShowOnboarding(true)}>Set a goal <span>↗</span></button></article></div></section>
+      <section className="bottom-cta" id="how-it-works"><div><p className="eyebrow"><span></span> Your next chapter starts here</p><h2>Ready to move<br /><em>as one?</em></h2></div><button className="primary-button light-button" onClick={() => setShowOnboarding(true)}>Open your dashboard <span aria-hidden="true">↗</span></button></section>
       <footer><a className="brand" href="#home"><span className="brand-mark">C</span><span>ChamaHub</span></a><span>Small steps. Shared wins.</span><span>© 2026 ChamaHub</span></footer>
+
+      {showOnboarding && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowOnboarding(false) }}>
+          <form className="contribution-modal" onSubmit={handleCreateChama}>
+            <button type="button" className="modal-close" aria-label="Close onboarding" onClick={() => setShowOnboarding(false)}>×</button>
+            <span className="card-kicker">Get started</span>
+            <h2>Create your chama</h2>
+            <p>Set up your group and start tracking your next shared goal.</p>
+            <label>Chama name<input name="chama-name" type="text" placeholder="e.g. Kitui Women’s Circle" defaultValue={chamaName} /></label>
+            <label>Location<input name="chama-city" type="text" placeholder="e.g. Kitui" defaultValue={getLocalChamaState().city} /></label>
+            <label>Goal name<input name="goal-name" type="text" placeholder="e.g. New meeting space" defaultValue="New meeting space" /></label>
+            <label>Target amount<input name="goal-target" type="text" inputMode="numeric" placeholder="KES 500,000" defaultValue="KES 500,000" /></label>
+            <button className="primary-button" type="submit">Create chama <span>↗</span></button>
+          </form>
+        </div>
+      )}
+
+      {showMemberSetup && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowMemberSetup(false) }}>
+          <form className="contribution-modal" onSubmit={handleMemberSetup}>
+            <button type="button" className="modal-close" aria-label="Close member setup" onClick={() => setShowMemberSetup(false)}>×</button>
+            <span className="card-kicker">Invite members</span>
+            <h2>Add your first circle</h2>
+            <p>Bring in the people who will contribute and grow the chama with you.</p>
+            <label>Member 1<input name="member-1" type="text" placeholder="e.g. Amina Mohamed" defaultValue="Amina Mohamed" /></label>
+            <label>Member 2<input name="member-2" type="text" placeholder="e.g. Joseph Otieno" /></label>
+            <label>Member 3<input name="member-3" type="text" placeholder="e.g. Njeri Kamau" /></label>
+            <label>Member 4<input name="member-4" type="text" placeholder="e.g. Brian Wekesa" /></label>
+            <button className="primary-button" type="submit">Continue to dashboard <span>↗</span></button>
+          </form>
+        </div>
+      )}
     </main>
   )
 }
