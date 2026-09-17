@@ -39,6 +39,7 @@ function Dashboard({ onBack, chamaName }) {
   const [showMemberForm, setShowMemberForm] = useState(false)
   const [detailView, setDetailView] = useState(null)
   const [notice, setNotice] = useState('')
+  const [celebrating, setCelebrating] = useState(false)
 
   useEffect(() => {
     localStorage.setItem('chamahub-contributions', JSON.stringify(dashboardContributions))
@@ -87,6 +88,8 @@ function Dashboard({ onBack, chamaName }) {
       setGoal({ name, target, saved })
       setShowGoalForm(false)
       setNotice('Shared goal updated successfully.')
+      setCelebrating(true)
+      window.setTimeout(() => setCelebrating(false), 900)
     } else {
       setNotice('Enter a valid goal and amounts within the target.')
     }
@@ -115,6 +118,8 @@ function Dashboard({ onBack, chamaName }) {
         saved: Math.min(currentGoal.target, (currentGoal.saved || 0) + amount),
       }))
       setNotice(`Contribution recorded for ${member.name}.`)
+      setCelebrating(true)
+      window.setTimeout(() => setCelebrating(false), 900)
       return
     }
 
@@ -149,6 +154,8 @@ function Dashboard({ onBack, chamaName }) {
     setDashboardMembers((currentMembers) => [...currentMembers, nextMember])
     setShowMemberForm(false)
     setNotice(`${name} was added to the chama.`)
+    setCelebrating(true)
+    window.setTimeout(() => setCelebrating(false), 900)
   }
 
   return (
@@ -160,11 +167,11 @@ function Dashboard({ onBack, chamaName }) {
 
       <section className="dashboard-content">
         <div className="dashboard-heading"><div><p className="eyebrow"><span></span> Monday, 14 September 2026</p><h1>Good morning, Amina.</h1><p className="dashboard-intro">Here&apos;s what&apos;s moving in your chama this week.</p></div><button className="primary-button dashboard-action" onClick={() => { setNotice(''); setShowContributionForm(true) }}>+ Record contribution</button></div>
-        {notice && <p className="dashboard-notice" role="status">{notice}</p>}
+        {notice && <p className={`dashboard-notice${celebrating ? ' is-celebrating' : ''}`} role="status"><span className="notice-spark" aria-hidden="true">✦</span>{notice}</p>}
 
         <div className="dashboard-grid">
           <article className="dashboard-card balance-panel"><div className="dashboard-card-label"><span>Total chama balance</span><span className="trend-label">↗ 12.8%</span></div><strong>KES {balance.toLocaleString('en-KE')}</strong><p>Up KES 48,500 since last month</p><div className="mini-chart"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
-          <article className="dashboard-card goal-panel"><div className="dashboard-card-label"><span>Shared goal</span><span>{Math.min(100, Math.round((goal.saved / goal.target) * 100))}%</span></div><h2>{goal.name}</h2><p>KES {goal.saved.toLocaleString('en-KE')} of KES {goal.target.toLocaleString('en-KE')}</p><div className="progress-track"><span style={{ width: `${Math.min(100, (goal.saved / goal.target) * 100)}%` }}></span></div><div className="goal-footer"><span>Target: Dec 2026</span><strong>KES {(goal.target - goal.saved).toLocaleString('en-KE')} left</strong></div><button className="goal-edit-button" onClick={() => { setNotice(''); setShowGoalForm(true) }}>Update goal <span>↗</span></button></article>
+          <article className="dashboard-card goal-panel"><div className="dashboard-card-label"><span>Shared goal</span><span className="goal-percent">{Math.min(100, Math.round((goal.saved / goal.target) * 100))}%</span></div><h2>{goal.name}</h2><p>KES {goal.saved.toLocaleString('en-KE')} of KES {goal.target.toLocaleString('en-KE')}</p><div className="progress-track"><span style={{ width: `${Math.min(100, (goal.saved / goal.target) * 100)}%` }}></span></div><div className="goal-footer"><span>Target: Dec 2026</span><strong>KES {(goal.target - goal.saved).toLocaleString('en-KE')} left</strong></div><button className="goal-edit-button" onClick={() => { setNotice(''); setShowGoalForm(true) }}>Update goal <span>↗</span></button></article>
           <article className="dashboard-card contribution-panel"><div className="panel-heading"><div><span className="card-kicker">Activity</span><h2>Recent contributions</h2></div><button className="quiet-button" onClick={() => setDetailView('activity')}>View all <span>↗</span></button></div><div className="contribution-list">{dashboardContributions.slice(0, 3).map((contribution, index) => <div className="contribution-row" key={`${contribution.member}-${contribution.date}-${index}`}><span className={`avatar ${contribution.tone}`}>{contribution.initials}</span><div><strong>{contribution.member}</strong><small>{contribution.date}</small></div><b>{contribution.amount}</b></div>)}</div></article>
           <article className="dashboard-card members-panel"><div className="panel-heading"><div><span className="card-kicker">Your circle</span><h2>Members <span className="count-badge">{dashboardMembers.length}</span></h2></div><button className="quiet-button" onClick={() => setDetailView('members')}>Manage <span>↗</span></button></div><div className="member-list">{dashboardMembers.slice(0, 4).map((member) => <div className="member-row" key={member.name}><span className={`avatar ${member.tone}`}>{member.initials}</span><div><strong>{member.name}</strong><small className={member.status.startsWith('Due') ? 'due-status' : ''}>{member.status}</small></div><span className="member-menu">•••</span></div>)}</div></article>
         </div>
