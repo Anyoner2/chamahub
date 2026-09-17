@@ -2,23 +2,9 @@
 
 ## Supabase setup
 
-Copy `.env.example` to `.env.local` and fill in the Supabase project URL and anon key. Then create the initial table in the Supabase SQL editor:
+Copy `.env.example` to `.env.local` and fill in the Supabase project URL and anon key. Then paste [supabase/schema.sql](supabase/schema.sql) into the Supabase SQL editor and run it.
 
-```sql
-create table public.chamas (
-	id uuid primary key default gen_random_uuid(),
-	name text not null,
-	city text default '',
-	goal jsonb not null,
-	members jsonb not null default '[]'::jsonb,
-	contributions jsonb not null default '[]'::jsonb,
-	balance integer not null default 0,
-	created_at timestamptz not null default now(),
-	updated_at timestamptz not null default now()
-);
-```
-
-The app keeps a local fallback when the environment variables are missing. Once configured, onboarding creates a `chamas` row and dashboard changes sync to that row. Authentication and row-level security should be added before production use.
+The app keeps a local fallback when the environment variables are missing. Once configured, onboarding creates a `chamas` row and dashboard changes sync to that row. The checked-in schema includes temporary anonymous policies for this MVP; replace them with authenticated, owner-scoped policies before production use.
 
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
