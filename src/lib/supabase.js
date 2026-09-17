@@ -8,3 +8,17 @@ export const supabase = supabaseUrl && supabaseAnonKey
   : null
 
 export const isSupabaseConfigured = Boolean(supabase)
+
+export async function signInWithPassword(email, password) {
+  if (!supabase) throw new Error('Supabase is not configured yet.')
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+  if (error) throw error
+  return data.user
+}
+
+export async function signUpWithPassword(email, password) {
+  if (!supabase) throw new Error('Supabase is not configured yet.')
+  const { data, error } = await supabase.auth.signUp({ email, password })
+  if (error) throw error
+  return data.user
+}
