@@ -47,3 +47,16 @@ create policy "Allow signed-in chama updates"
   to authenticated
   using (true)
   with check (true);
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'chamas'
+  ) then
+    alter publication supabase_realtime add table public.chamas;
+  end if;
+end $$;

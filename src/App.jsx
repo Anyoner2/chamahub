@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import './App.css'
 import { createChamaRecord, getLocalChamaState, saveChamaRecord, saveLocalChamaState, searchChamas } from './lib/chamaStore'
 import { isSupabaseConfigured, signInWithPassword, signUpWithPassword, supabase } from './lib/supabase'
@@ -18,7 +18,7 @@ const initialMembers = [
 
 const defaultGoal = { name: 'New meeting space', target: 500000, saved: 360000 }
 
-function Dashboard({ onBack, chamaName, user }) {
+function Dashboard({ onBack, chamaName, user, chamaId }) {
   const [dashboardContributions, setDashboardContributions] = useState(() => {
     const saved = localStorage.getItem('chamahub-contributions')
     return saved ? JSON.parse(saved) : contributions
@@ -45,6 +45,7 @@ function Dashboard({ onBack, chamaName, user }) {
   const [chamaSearchError, setChamaSearchError] = useState('')
   const [notice, setNotice] = useState('')
   const [celebrating, setCelebrating] = useState(false)
+  const remoteUpdateRef = useRef(false)
 
   useEffect(() => {
     localStorage.setItem('chamahub-contributions', JSON.stringify(dashboardContributions))
@@ -52,7 +53,11 @@ function Dashboard({ onBack, chamaName, user }) {
     localStorage.setItem('chamahub-balance', String(balance))
     localStorage.setItem('chamahub-goal', JSON.stringify(goal))
 
-    const chamaId = localStorage.getItem('chamahub-chama-id')
+    if (remoteUpdateRef.current) {
+      remoteUpdateRef.current = false
+      return
+    }
+
     if (chamaId) {
       saveChamaRecord(chamaId, {
         name: chamaName,
@@ -63,7 +68,26 @@ function Dashboard({ onBack, chamaName, user }) {
         balance,
       }).catch(() => console.error('Unable to sync chama changes with Supabase.'))
     }
-  }, [balance, chamaName, dashboardContributions, dashboardMembers, goal])
+  }, [balance, chamaId, chamaName, dashboardContributions, dashboardMembers, goal])
+
+  useEffect(() => {
+    if (!supabase || !chamaId) return undefined
+
+    const channel = supabase
+      .channel(`chama-${chamaId}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chamas', filter: `id=eq.${chamaId}` }, ({ new: updatedChama }) => {
+        remoteUpdateRef.current = true
+        setDashboardContributions(updatedChama.contributions || [])
+        setDashboardMembers(updatedChama.members || [])
+        setBalance(updatedChama.balance || 0)
+        setGoal(updatedChama.goal || defaultGoal)
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [chamaId])
 
   function parseCurrency(value) {
     return Number(String(value).replace(/[^0-9]/g, '')) || 0
@@ -265,6 +289,7 @@ function App() {
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [showMemberSetup, setShowMemberSetup] = useState(false)
   const [chamaName, setChamaName] = useState(() => getLocalChamaState().name)
+  const [chamaId, setChamaId] = useState(() => localStorage.getItem('chamahub-chama-id') || '')
   const [user, setUser] = useState(null)
   const [showAuth, setShowAuth] = useState(false)
   const [authDestination, setAuthDestination] = useState('dashboard')
@@ -347,14 +372,14 @@ function App() {
     saveLocalChamaState(nextState)
     if (isSupabaseConfigured) {
       createChamaRecord(nextState)
-        .then((record) => localStorage.setItem('chamahub-chama-id', record.id))
+        .then((record) => { localStorage.setItem('chamahub-chama-id', record.id); setChamaId(record.id) })
         .catch(() => console.error('Unable to sync chama with Supabase.'))
     }
     setShowMemberSetup(false)
     setShowDashboard(true)
   }
 
-  if (showDashboard && user) return <Dashboard onBack={() => setShowDashboard(false)} chamaName={chamaName} user={user} />
+  if (showDashboard && user) return <Dashboard onBack={() => setShowDashboard(false)} chamaName={chamaName} user={user} chamaId={chamaId} />
 
   return (
     <main>
