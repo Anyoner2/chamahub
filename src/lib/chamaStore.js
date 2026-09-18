@@ -74,3 +74,17 @@ export async function saveChamaRecord(id, state) {
 
   if (error) throw error
 }
+
+export async function searchChamas(query) {
+  const trimmedQuery = query.trim()
+  if (!isSupabaseConfigured || !trimmedQuery) return []
+
+  const { data, error } = await supabase
+    .from('chamas')
+    .select('id, name, city, goal')
+    .ilike('name', `%${trimmedQuery}%`)
+    .limit(12)
+
+  if (error) throw error
+  return data || []
+}

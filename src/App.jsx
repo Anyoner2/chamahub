@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import './App.css'
-import { createChamaRecord, getLocalChamaState, saveChamaRecord, saveLocalChamaState } from './lib/chamaStore'
+import { createChamaRecord, getLocalChamaState, saveChamaRecord, saveLocalChamaState, searchChamas } from './lib/chamaStore'
 import { isSupabaseConfigured, signInWithPassword, signUpWithPassword, supabase } from './lib/supabase'
 
 const contributions = [
@@ -38,6 +38,11 @@ function Dashboard({ onBack, chamaName, user }) {
   const [showGoalForm, setShowGoalForm] = useState(false)
   const [showMemberForm, setShowMemberForm] = useState(false)
   const [detailView, setDetailView] = useState(null)
+  const [showChamaSearch, setShowChamaSearch] = useState(false)
+  const [chamaSearchQuery, setChamaSearchQuery] = useState('')
+  const [chamaSearchResults, setChamaSearchResults] = useState([])
+  const [chamaSearchLoading, setChamaSearchLoading] = useState(false)
+  const [chamaSearchError, setChamaSearchError] = useState('')
   const [notice, setNotice] = useState('')
   const [celebrating, setCelebrating] = useState(false)
 
@@ -158,11 +163,29 @@ function Dashboard({ onBack, chamaName, user }) {
     window.setTimeout(() => setCelebrating(false), 900)
   }
 
+  async function handleChamaSearch(event) {
+    event.preventDefault()
+    const query = chamaSearchQuery.trim()
+    if (!query) return
+
+    setChamaSearchLoading(true)
+    setChamaSearchError('')
+    try {
+      const results = await searchChamas(query)
+      setChamaSearchResults(results)
+    } catch {
+      setChamaSearchResults([])
+      setChamaSearchError('Search is unavailable right now. Check your Supabase table policies.')
+    } finally {
+      setChamaSearchLoading(false)
+    }
+  }
+
   return (
     <main className="dashboard-shell">
       <nav className="dashboard-nav" aria-label="Dashboard navigation">
         <button className="brand dashboard-brand" onClick={onBack} aria-label="Return to ChamaHub home"><span className="brand-mark">C</span><span>ChamaHub</span></button>
-        <div className="dashboard-nav-meta"><span className="status-dot"></span><span>{chamaName}</span><span className="nav-divider"></span><button className="profile-chip">{user.initials}</button></div>
+        <div className="dashboard-nav-meta"><button className="find-chama-button" onClick={() => { setChamaSearchError(''); setShowChamaSearch(true) }}>Find a chama <span>⌕</span></button><span className="status-dot"></span><span>{chamaName}</span><span className="nav-divider"></span><button className="profile-chip">{user.initials}</button></div>
       </nav>
 
       <section className="dashboard-content">
@@ -181,6 +204,7 @@ function Dashboard({ onBack, chamaName, user }) {
       {showGoalForm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowGoalForm(false) }}><form className="contribution-modal" onSubmit={handleGoal}><button type="button" className="modal-close" aria-label="Close goal form" onClick={() => setShowGoalForm(false)}>×</button><span className="card-kicker">Shared goal</span><h2>Update your goal</h2><p>Give the chama a clear target to move toward together.</p><label>Goal name<input name="goal-name" type="text" defaultValue={goal.name} /></label><label>Target amount<input name="goal-target" type="text" inputMode="numeric" defaultValue={`KES ${goal.target.toLocaleString('en-KE')}`} /></label><label>Saved so far<input name="goal-saved" type="text" inputMode="numeric" defaultValue={`KES ${goal.saved.toLocaleString('en-KE')}`} /></label><button className="primary-button" type="submit">Save goal <span>↗</span></button></form></div>}
       {showMemberForm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowMemberForm(false) }}><form className="contribution-modal" onSubmit={handleMember}><button type="button" className="modal-close" aria-label="Close member form" onClick={() => setShowMemberForm(false)}>×</button><span className="card-kicker">New member</span><h2>Add to your circle</h2><p>Invite a new chama member and keep the group moving together.</p><label>Full name<input name="member-name" type="text" placeholder="e.g. Grace Waweru" /></label><button className="primary-button" type="submit">Add member <span>↗</span></button></form></div>}
       {detailView && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetailView(null) }}><section className="contribution-modal detail-modal" aria-labelledby="detail-title"><button type="button" className="modal-close" aria-label="Close details" onClick={() => setDetailView(null)}>×</button><span className="card-kicker">{detailView === 'activity' ? 'Activity log' : 'Your circle'}</span><h2 id="detail-title">{detailView === 'activity' ? 'All contributions' : 'Manage members'}</h2><p>{detailView === 'activity' ? 'A clear record of every recent payment.' : 'See who is up to date and who needs a reminder.'}</p>{detailView === 'activity' ? <div className="contribution-list detail-list">{dashboardContributions.map((contribution, index) => <div className="contribution-row" key={`${contribution.member}-${contribution.date}-${index}`}><span className={`avatar ${contribution.tone}`}>{contribution.initials}</span><div><strong>{contribution.member}</strong><small>{contribution.date}</small></div><b>{contribution.amount}</b></div>)}</div> : <div className="member-list detail-list"><button className="primary-button member-add-button" type="button" onClick={() => { setShowMemberForm(true); setDetailView(null) }}>+ Add member</button>{dashboardMembers.map((member) => <div className="member-row" key={member.name}><span className={`avatar ${member.tone}`}>{member.initials}</span><div><strong>{member.name}</strong><small className={member.status.startsWith('Due') ? 'due-status' : ''}>{member.status}</small></div><button className="remind-button" onClick={() => { setDetailView(null); setNotice(`Reminder sent to ${member.name}.`) }}>Remind</button></div>)}</div>}</section></div>}
+      {showChamaSearch && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowChamaSearch(false) }}><section className="contribution-modal search-modal" aria-labelledby="search-title"><button type="button" className="modal-close" aria-label="Close chama search" onClick={() => setShowChamaSearch(false)}>×</button><span className="card-kicker">Grow together</span><h2 id="search-title">Find a chama</h2><p>Search for a chama by its name and discover your next circle.</p><form className="chama-search-form" onSubmit={handleChamaSearch}><input type="search" value={chamaSearchQuery} onChange={(event) => setChamaSearchQuery(event.target.value)} placeholder="e.g. Kitui Women&apos;s Circle" aria-label="Search chamas" /><button className="primary-button" type="submit">{chamaSearchLoading ? 'Searching...' : 'Search'} <span>⌕</span></button></form>{chamaSearchError && <p className="auth-error" role="alert">{chamaSearchError}</p>}{chamaSearchQuery && !chamaSearchLoading && !chamaSearchError && chamaSearchResults.length === 0 && <p className="empty-search">No chamas found yet. Try another name.</p>}<div className="chama-results">{chamaSearchResults.map((result) => <article className="chama-result" key={result.id}><span className="goal-icon">✦</span><div><strong>{result.name}</strong><small>{result.city || 'Kenya'} · {result.goal?.name || 'Shared goal'}</small></div><button type="button" className="remind-button" onClick={() => setNotice(`A request to join ${result.name} is coming soon.`)}>View</button></article>)}</div></section></div>}
     </main>
   )
 }

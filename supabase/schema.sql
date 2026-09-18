@@ -31,3 +31,19 @@ create policy "Allow anonymous chama updates"
   to anon
   using (true)
   with check (true);
+
+create policy "Allow signed-in chama reads"
+  on public.chamas for select
+  to authenticated
+  using (true);
+
+create policy "Allow signed-in chama inserts"
+  on public.chamas for insert
+  to authenticated
+  with check (true);
+
+create policy "Allow signed-in chama updates"
+  on public.chamas for update
+  to authenticated
+  using (true)
+  with check (true);
