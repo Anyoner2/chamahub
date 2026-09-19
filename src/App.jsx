@@ -302,6 +302,7 @@ function Dashboard({ onBack, onSignOut, chamaName, user, chamaId }) {
 
 function AuthModal({ onAuthenticated, onClose }) {
   const [mode, setMode] = useState('login')
+  const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -315,7 +316,7 @@ function AuthModal({ onAuthenticated, onClose }) {
     try {
       const user = mode === 'login'
         ? await signInWithPassword(email, password)
-        : await signUpWithPassword(email, password)
+        : await signUpWithPassword(email, password, fullName)
 
       if (user) {
         onAuthenticated(user)
@@ -341,6 +342,7 @@ function AuthModal({ onAuthenticated, onClose }) {
           <button type="button" className={mode === 'login' ? 'active' : ''} onClick={() => { setMode('login'); setError('') }}>Log in</button>
           <button type="button" className={mode === 'signup' ? 'active' : ''} onClick={() => { setMode('signup'); setError('') }}>Sign up</button>
         </div>
+        {mode === 'signup' && <label>Full name<input name="full-name" type="text" autoComplete="name" value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="e.g. Amina Mohamed" required /></label>}
         <label>Email address<input name="email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" required /></label>
         <label>Password<input name="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 6 characters" minLength="6" required /></label>
         {error && <p className="auth-error" role="alert">{error}</p>}
@@ -377,8 +379,11 @@ function App() {
 
   function toUserProfile(authUser) {
     const email = authUser.email || ''
-    const firstName = email.split('@')[0].split(/[._-]/)[0] || 'friend'
-    return { id: authUser.id, email, firstName: firstName.charAt(0).toUpperCase() + firstName.slice(1), initials: firstName.slice(0, 2).toUpperCase() }
+    const displayName = authUser.user_metadata?.full_name || email.split('@')[0].split(/[._-]/)[0] || 'friend'
+    const nameParts = displayName.trim().split(/\s+/).filter(Boolean)
+    const firstName = nameParts[0] || 'friend'
+    const initials = nameParts.length > 1 ? `${nameParts[0][0]}${nameParts[nameParts.length - 1][0]}` : firstName.slice(0, 2)
+    return { id: authUser.id, email, firstName: firstName.charAt(0).toUpperCase() + firstName.slice(1), initials: initials.toUpperCase() }
   }
 
   function requestEntry(destination) {
