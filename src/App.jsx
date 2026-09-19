@@ -94,7 +94,21 @@ function Dashboard({ onBack, chamaName, user, chamaId }) {
   }, [chamaId])
 
   useEffect(() => {
-    getUserJoinRequests(user.id).then(setMyJoinRequests).catch(() => setMyJoinRequests([]))
+    function refreshMyJoinRequests() {
+      getUserJoinRequests(user.id).then(setMyJoinRequests).catch(() => setMyJoinRequests([]))
+    }
+
+    refreshMyJoinRequests()
+    if (!supabase) return undefined
+
+    const channel = supabase
+      .channel(`user-requests-${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chama_join_requests', filter: `user_id=eq.${user.id}` }, refreshMyJoinRequests)
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [user.id])
 
   useEffect(() => {
