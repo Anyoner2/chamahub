@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
 import { createChamaRecord, getChamaJoinRequests, getLocalChamaState, getUserJoinRequests, requestToJoinChama, saveChamaRecord, saveLocalChamaState, searchChamas, updateJoinRequest } from './lib/chamaStore'
-import { isSupabaseConfigured, signInWithPassword, signUpWithPassword, supabase } from './lib/supabase'
+import { isSupabaseConfigured, signInWithPassword, signOut, signUpWithPassword, supabase } from './lib/supabase'
 
 const contributions = [
   { member: 'Amina M.', initials: 'AM', date: 'Today, 09:42', amount: 'KES 5,000', tone: 'coral' },
@@ -18,7 +18,7 @@ const initialMembers = [
 
 const defaultGoal = { name: 'New meeting space', target: 500000, saved: 360000 }
 
-function Dashboard({ onBack, chamaName, user, chamaId }) {
+function Dashboard({ onBack, onSignOut, chamaName, user, chamaId }) {
   const [dashboardContributions, setDashboardContributions] = useState(() => {
     const saved = localStorage.getItem('chamahub-contributions')
     return saved ? JSON.parse(saved) : contributions
@@ -275,7 +275,7 @@ function Dashboard({ onBack, chamaName, user, chamaId }) {
     <main className="dashboard-shell">
       <nav className="dashboard-nav" aria-label="Dashboard navigation">
         <button className="brand dashboard-brand" onClick={onBack} aria-label="Return to ChamaHub home"><span className="brand-mark">C</span><span>ChamaHub</span></button>
-        <div className="dashboard-nav-meta"><button className="find-chama-button" onClick={() => { setChamaSearchError(''); setShowChamaSearch(true) }}>Find a chama <span>⌕</span></button>{myJoinRequests.filter((request) => request.status === 'approved').length > 0 && <button className="joined-badge" onClick={() => { setChamaSearchError(''); setShowChamaSearch(true) }}>Joined circle</button>}{joinRequests.length > 0 && <button className="request-badge" onClick={() => setShowJoinRequests(true)}>{joinRequests.length} join request{joinRequests.length === 1 ? '' : 's'}</button>}<span className="status-dot"></span><span>{chamaName}</span><span className="nav-divider"></span><button className="profile-chip">{user.initials}</button></div>
+        <div className="dashboard-nav-meta"><button className="find-chama-button" onClick={() => { setChamaSearchError(''); setShowChamaSearch(true) }}>Find a chama <span>⌕</span></button>{myJoinRequests.filter((request) => request.status === 'approved').length > 0 && <button className="joined-badge" onClick={() => { setChamaSearchError(''); setShowChamaSearch(true) }}>Joined circle</button>}{joinRequests.length > 0 && <button className="request-badge" onClick={() => setShowJoinRequests(true)}>{joinRequests.length} join request{joinRequests.length === 1 ? '' : 's'}</button>}<span className="status-dot"></span><span>{chamaName}</span><span className="nav-divider"></span><button className="sign-out-button" onClick={onSignOut}>Sign out</button><button className="profile-chip" aria-hidden="true">{user.initials}</button></div>
       </nav>
 
       <section className="dashboard-content">
@@ -446,7 +446,13 @@ function App() {
     setShowDashboard(true)
   }
 
-  if (showDashboard && user) return <Dashboard onBack={() => setShowDashboard(false)} chamaName={chamaName} user={user} chamaId={chamaId} />
+  async function handleSignOut() {
+    await signOut()
+    setShowDashboard(false)
+    setUser(null)
+  }
+
+  if (showDashboard && user) return <Dashboard onBack={() => setShowDashboard(false)} onSignOut={handleSignOut} chamaName={chamaName} user={user} chamaId={chamaId} />
 
   return (
     <main>
