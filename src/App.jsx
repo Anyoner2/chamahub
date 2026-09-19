@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
-import { createChamaRecord, getLocalChamaState, requestToJoinChama, saveChamaRecord, saveLocalChamaState, searchChamas } from './lib/chamaStore'
+import { createChamaRecord, getChamaJoinRequests, getLocalChamaState, requestToJoinChama, saveChamaRecord, saveLocalChamaState, searchChamas, updateJoinRequest } from './lib/chamaStore'
 import { isSupabaseConfigured, signInWithPassword, signUpWithPassword, supabase } from './lib/supabase'
 
 const contributions = [
@@ -44,6 +44,8 @@ function Dashboard({ onBack, chamaName, user, chamaId }) {
   const [chamaSearchLoading, setChamaSearchLoading] = useState(false)
   const [chamaSearchError, setChamaSearchError] = useState('')
   const [joinRequestStatus, setJoinRequestStatus] = useState({})
+  const [joinRequests, setJoinRequests] = useState([])
+  const [showJoinRequests, setShowJoinRequests] = useState(false)
   const [notice, setNotice] = useState('')
   const [celebrating, setCelebrating] = useState(false)
   const remoteUpdateRef = useRef(false)
@@ -82,6 +84,22 @@ function Dashboard({ onBack, chamaName, user, chamaId }) {
         setDashboardMembers(updatedChama.members || [])
         setBalance(updatedChama.balance || 0)
         setGoal(updatedChama.goal || defaultGoal)
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [chamaId])
+
+  useEffect(() => {
+    if (!chamaId || !supabase) return undefined
+
+    getChamaJoinRequests(chamaId).then(setJoinRequests).catch(() => setJoinRequests([]))
+    const channel = supabase
+      .channel(`chama-requests-${chamaId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chama_join_requests', filter: `chama_id=eq.${chamaId}` }, () => {
+        getChamaJoinRequests(chamaId).then(setJoinRequests).catch(() => setJoinRequests([]))
       })
       .subscribe()
 
@@ -218,11 +236,21 @@ function Dashboard({ onBack, chamaName, user, chamaId }) {
     }
   }
 
+  async function handleRequestDecision(request, status) {
+    try {
+      await updateJoinRequest(request.id, status)
+      setJoinRequests((currentRequests) => currentRequests.filter((item) => item.id !== request.id))
+      setNotice(status === 'approved' ? 'Member request approved.' : 'Member request declined.')
+    } catch {
+      setNotice('We could not update that request. Check your Supabase policies.')
+    }
+  }
+
   return (
     <main className="dashboard-shell">
       <nav className="dashboard-nav" aria-label="Dashboard navigation">
         <button className="brand dashboard-brand" onClick={onBack} aria-label="Return to ChamaHub home"><span className="brand-mark">C</span><span>ChamaHub</span></button>
-        <div className="dashboard-nav-meta"><button className="find-chama-button" onClick={() => { setChamaSearchError(''); setShowChamaSearch(true) }}>Find a chama <span>⌕</span></button><span className="status-dot"></span><span>{chamaName}</span><span className="nav-divider"></span><button className="profile-chip">{user.initials}</button></div>
+        <div className="dashboard-nav-meta"><button className="find-chama-button" onClick={() => { setChamaSearchError(''); setShowChamaSearch(true) }}>Find a chama <span>⌕</span></button>{joinRequests.length > 0 && <button className="request-badge" onClick={() => setShowJoinRequests(true)}>{joinRequests.length} join request{joinRequests.length === 1 ? '' : 's'}</button>}<span className="status-dot"></span><span>{chamaName}</span><span className="nav-divider"></span><button className="profile-chip">{user.initials}</button></div>
       </nav>
 
       <section className="dashboard-content">
@@ -242,6 +270,7 @@ function Dashboard({ onBack, chamaName, user, chamaId }) {
       {showMemberForm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowMemberForm(false) }}><form className="contribution-modal" onSubmit={handleMember}><button type="button" className="modal-close" aria-label="Close member form" onClick={() => setShowMemberForm(false)}>×</button><span className="card-kicker">New member</span><h2>Add to your circle</h2><p>Invite a new chama member and keep the group moving together.</p><label>Full name<input name="member-name" type="text" placeholder="e.g. Grace Waweru" /></label><button className="primary-button" type="submit">Add member <span>↗</span></button></form></div>}
       {detailView && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetailView(null) }}><section className="contribution-modal detail-modal" aria-labelledby="detail-title"><button type="button" className="modal-close" aria-label="Close details" onClick={() => setDetailView(null)}>×</button><span className="card-kicker">{detailView === 'activity' ? 'Activity log' : 'Your circle'}</span><h2 id="detail-title">{detailView === 'activity' ? 'All contributions' : 'Manage members'}</h2><p>{detailView === 'activity' ? 'A clear record of every recent payment.' : 'See who is up to date and who needs a reminder.'}</p>{detailView === 'activity' ? <div className="contribution-list detail-list">{dashboardContributions.map((contribution, index) => <div className="contribution-row" key={`${contribution.member}-${contribution.date}-${index}`}><span className={`avatar ${contribution.tone}`}>{contribution.initials}</span><div><strong>{contribution.member}</strong><small>{contribution.date}</small></div><b>{contribution.amount}</b></div>)}</div> : <div className="member-list detail-list"><button className="primary-button member-add-button" type="button" onClick={() => { setShowMemberForm(true); setDetailView(null) }}>+ Add member</button>{dashboardMembers.map((member) => <div className="member-row" key={member.name}><span className={`avatar ${member.tone}`}>{member.initials}</span><div><strong>{member.name}</strong><small className={member.status.startsWith('Due') ? 'due-status' : ''}>{member.status}</small></div><button className="remind-button" onClick={() => { setDetailView(null); setNotice(`Reminder sent to ${member.name}.`) }}>Remind</button></div>)}</div>}</section></div>}
       {showChamaSearch && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowChamaSearch(false) }}><section className="contribution-modal search-modal" aria-labelledby="search-title"><button type="button" className="modal-close" aria-label="Close chama search" onClick={() => setShowChamaSearch(false)}>×</button><span className="card-kicker">Grow together</span><h2 id="search-title">Find a chama</h2><p>Search for a chama by its name and discover your next circle.</p><form className="chama-search-form" onSubmit={handleChamaSearch}><input type="search" value={chamaSearchQuery} onChange={(event) => setChamaSearchQuery(event.target.value)} placeholder="e.g. Kitui Women&apos;s Circle" aria-label="Search chamas" /><button className="primary-button" type="submit">{chamaSearchLoading ? 'Searching...' : 'Search'} <span>⌕</span></button></form>{chamaSearchError && <p className="auth-error" role="alert">{chamaSearchError}</p>}{chamaSearchQuery && !chamaSearchLoading && !chamaSearchError && chamaSearchResults.length === 0 && <p className="empty-search">No chamas found yet. Try another name.</p>}<div className="chama-results">{chamaSearchResults.map((result) => { const requestStatus = joinRequestStatus[result.id]; return <article className="chama-result" key={result.id}><span className="goal-icon">✦</span><div><strong>{result.name}</strong><small>{result.city || 'Kenya'} · {result.goal?.name || 'Shared goal'}</small></div><button type="button" className="remind-button" disabled={requestStatus === 'loading' || requestStatus === 'sent'} onClick={() => handleJoinRequest(result)}>{requestStatus === 'sent' ? 'Requested' : requestStatus === 'loading' ? 'Sending...' : 'Request to join'}</button></article> })}</div></section></div>}
+      {showJoinRequests && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowJoinRequests(false) }}><section className="contribution-modal detail-modal" aria-labelledby="requests-title"><button type="button" className="modal-close" aria-label="Close join requests" onClick={() => setShowJoinRequests(false)}>×</button><span className="card-kicker">Your circle</span><h2 id="requests-title">Join requests</h2><p>Review people who want to contribute to {chamaName}.</p><div className="request-list">{joinRequests.map((request) => <article className="request-row" key={request.id}><span className="avatar sage">{request.user_id.slice(0, 2).toUpperCase()}</span><div><strong>New member</strong><small>Request received {new Date(request.created_at).toLocaleDateString()}</small></div><button className="approve-button" onClick={() => handleRequestDecision(request, 'approved')}>Approve</button><button className="decline-button" onClick={() => handleRequestDecision(request, 'declined')}>Decline</button></article>)}</div></section></div>}
     </main>
   )
 }
@@ -384,7 +413,7 @@ function App() {
     const nextState = { ...state, members }
     saveLocalChamaState(nextState)
     if (isSupabaseConfigured) {
-      createChamaRecord(nextState)
+      createChamaRecord({ ...nextState, ownerId: user.id })
         .then((record) => { localStorage.setItem('chamahub-chama-id', record.id); setChamaId(record.id) })
         .catch(() => console.error('Unable to sync chama with Supabase.'))
     }

@@ -43,12 +43,12 @@ export function saveLocalChamaState(state) {
   writeLocal(localKeys.balance, String(state.balance))
 }
 
-export async function createChamaRecord({ name, city, goal, members }) {
+export async function createChamaRecord({ name, city, goal, members, ownerId }) {
   if (!isSupabaseConfigured) return null
 
   const { data, error } = await supabase
     .from('chamas')
-    .insert({ name, city, goal, members })
+    .insert({ name, city, goal, members, owner_id: ownerId })
     .select('id')
     .single()
 
@@ -100,4 +100,29 @@ export async function requestToJoinChama(chamaId, userId) {
 
   if (error) throw error
   return data
+}
+
+export async function getChamaJoinRequests(chamaId) {
+  if (!isSupabaseConfigured || !chamaId) return []
+
+  const { data, error } = await supabase
+    .from('chama_join_requests')
+    .select('id, user_id, status, created_at')
+    .eq('chama_id', chamaId)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return data || []
+}
+
+export async function updateJoinRequest(requestId, status) {
+  if (!isSupabaseConfigured) return
+
+  const { error } = await supabase
+    .from('chama_join_requests')
+    .update({ status })
+    .eq('id', requestId)
+
+  if (error) throw error
 }
