@@ -32,3 +32,10 @@ export async function signOut() {
   const { error } = await supabase.auth.signOut()
   if (error) throw error
 }
+
+export async function updateProfile(fullName) {
+  if (!supabase) throw new Error('Supabase is not configured yet.')
+  const { data, error } = await supabase.auth.updateUser({ data: { full_name: fullName } })
+  if (error) throw error
+  return data.user
+}
