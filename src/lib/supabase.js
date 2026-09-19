@@ -39,3 +39,11 @@ export async function updateProfile(fullName) {
   if (error) throw error
   return data.user
 }
+
+export async function sendPasswordReset(email) {
+  if (!supabase) throw new Error('Supabase is not configured yet.')
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin,
+  })
+  if (error) throw error
+}

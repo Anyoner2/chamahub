@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
 import { createChamaRecord, getChamaJoinRequests, getLocalChamaState, getUserJoinRequests, requestToJoinChama, saveChamaRecord, saveLocalChamaState, searchChamas, updateJoinRequest } from './lib/chamaStore'
-import { isSupabaseConfigured, signInWithPassword, signOut, signUpWithPassword, supabase, updateProfile } from './lib/supabase'
+import { isSupabaseConfigured, sendPasswordReset, signInWithPassword, signOut, signUpWithPassword, supabase, updateProfile } from './lib/supabase'
 
 const contributions = [
   { member: 'Amina M.', initials: 'AM', date: 'Today, 09:42', amount: 'KES 5,000', tone: 'coral' },
@@ -332,6 +332,7 @@ function AuthModal({ onAuthenticated, onClose }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [resetSent, setResetSent] = useState(false)
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -356,13 +357,30 @@ function AuthModal({ onAuthenticated, onClose }) {
     }
   }
 
+  async function handlePasswordReset() {
+    if (!email) {
+      setError('Enter your email address first.')
+      return
+    }
+    setError('')
+    setLoading(true)
+    try {
+      await sendPasswordReset(email)
+      setResetSent(true)
+    } catch (resetError) {
+      setError(resetError.message || 'We could not send a reset email.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="modal-backdrop auth-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
       <form className="contribution-modal auth-modal" onSubmit={handleSubmit}>
         <button type="button" className="modal-close" aria-label="Close authentication" onClick={onClose}>×</button>
         <span className="card-kicker">Your circle awaits</span>
         <h2>{mode === 'login' ? 'Welcome back' : 'Join ChamaHub'}</h2>
-        <p>{mode === 'login' ? 'Log in to pick up where your chama left off.' : 'Create your account and start building shared wins.'}</p>
+        <p>{resetSent ? 'Check your inbox for a secure password reset link.' : mode === 'login' ? 'Log in to pick up where your chama left off.' : 'Create your account and start building shared wins.'}</p>
         <div className="auth-tabs" role="tablist" aria-label="Authentication mode">
           <button type="button" className={mode === 'login' ? 'active' : ''} onClick={() => { setMode('login'); setError('') }}>Log in</button>
           <button type="button" className={mode === 'signup' ? 'active' : ''} onClick={() => { setMode('signup'); setError('') }}>Sign up</button>
@@ -370,6 +388,7 @@ function AuthModal({ onAuthenticated, onClose }) {
         {mode === 'signup' && <label>Full name<input name="full-name" type="text" autoComplete="name" value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="e.g. Amina Mohamed" required /></label>}
         <label>Email address<input name="email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" required /></label>
         <label>Password<input name="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 6 characters" minLength="6" required /></label>
+        {mode === 'login' && <button type="button" className="forgot-password" onClick={handlePasswordReset} disabled={loading}>Forgot password?</button>}
         {error && <p className="auth-error" role="alert">{error}</p>}
         <button className="primary-button" type="submit" disabled={loading || !isSupabaseConfigured}>{loading ? 'Opening your circle...' : mode === 'login' ? 'Log in to dashboard' : 'Create my account'} <span>↗</span></button>
         {!isSupabaseConfigured && <small className="auth-help">Add your Supabase values to `.env.local` to enable accounts.</small>}
