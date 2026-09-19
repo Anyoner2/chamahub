@@ -88,3 +88,16 @@ export async function searchChamas(query) {
   if (error) throw error
   return data || []
 }
+
+export async function requestToJoinChama(chamaId, userId) {
+  if (!isSupabaseConfigured) return null
+
+  const { data, error } = await supabase
+    .from('chama_join_requests')
+    .upsert({ chama_id: chamaId, user_id: userId, status: 'pending' }, { onConflict: 'chama_id,user_id' })
+    .select('id, status')
+    .single()
+
+  if (error) throw error
+  return data
+}

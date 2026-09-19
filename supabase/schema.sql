@@ -12,7 +12,17 @@ create table if not exists public.chamas (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.chama_join_requests (
+  id uuid primary key default gen_random_uuid(),
+  chama_id uuid not null references public.chamas(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'declined')),
+  created_at timestamptz not null default now(),
+  unique (chama_id, user_id)
+);
+
 alter table public.chamas enable row level security;
+alter table public.chama_join_requests enable row level security;
 
 -- Temporary anonymous policies for the current MVP. Replace these with
 -- authenticated, owner-scoped policies before production use.
@@ -47,6 +57,16 @@ create policy "Allow signed-in chama updates"
   to authenticated
   using (true)
   with check (true);
+
+create policy "Allow signed-in join request inserts"
+  on public.chama_join_requests for insert
+  to authenticated
+  with check (user_id = auth.uid());
+
+create policy "Allow signed-in join request reads"
+  on public.chama_join_requests for select
+  to authenticated
+  using (user_id = auth.uid());
 
 do $$
 begin
