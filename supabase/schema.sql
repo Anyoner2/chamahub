@@ -19,10 +19,15 @@ create table if not exists public.chama_join_requests (
   id uuid primary key default gen_random_uuid(),
   chama_id uuid not null references public.chamas(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
+  requester_name text not null default 'New member',
+  requester_email text not null default '',
   status text not null default 'pending' check (status in ('pending', 'approved', 'declined')),
   created_at timestamptz not null default now(),
   unique (chama_id, user_id)
 );
+
+alter table public.chama_join_requests add column if not exists requester_name text not null default 'New member';
+alter table public.chama_join_requests add column if not exists requester_email text not null default '';
 
 alter table public.chamas enable row level security;
 alter table public.chama_join_requests enable row level security;

@@ -89,12 +89,12 @@ export async function searchChamas(query) {
   return data || []
 }
 
-export async function requestToJoinChama(chamaId, userId) {
+export async function requestToJoinChama(chamaId, userId, requester) {
   if (!isSupabaseConfigured) return null
 
   const { data, error } = await supabase
     .from('chama_join_requests')
-    .upsert({ chama_id: chamaId, user_id: userId, status: 'pending' }, { onConflict: 'chama_id,user_id' })
+    .upsert({ chama_id: chamaId, user_id: userId, requester_name: requester.name, requester_email: requester.email, status: 'pending' }, { onConflict: 'chama_id,user_id' })
     .select('id, status')
     .single()
 
@@ -107,7 +107,7 @@ export async function getChamaJoinRequests(chamaId) {
 
   const { data, error } = await supabase
     .from('chama_join_requests')
-    .select('id, user_id, status, created_at')
+    .select('id, user_id, requester_name, requester_email, status, created_at')
     .eq('chama_id', chamaId)
     .eq('status', 'pending')
     .order('created_at', { ascending: false })
