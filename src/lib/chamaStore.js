@@ -126,3 +126,16 @@ export async function updateJoinRequest(requestId, status) {
 
   if (error) throw error
 }
+
+export async function getUserJoinRequests(userId) {
+  if (!isSupabaseConfigured || !userId) return []
+
+  const { data, error } = await supabase
+    .from('chama_join_requests')
+    .select('id, chama_id, status, created_at, chamas(id, name, city, goal)')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return data || []
+}
