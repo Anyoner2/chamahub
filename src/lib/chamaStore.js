@@ -75,6 +75,38 @@ export async function saveChamaRecord(id, state) {
   if (error) throw error
 }
 
+export async function recordChamaContribution(id, contribution, amount) {
+  if (!isSupabaseConfigured || !id) return null
+
+  const { data: chama, error: fetchError } = await supabase
+    .from('chamas')
+    .select('contributions, balance, goal')
+    .eq('id', id)
+    .single()
+
+  if (fetchError) throw fetchError
+
+  const contributions = Array.isArray(chama.contributions) ? chama.contributions : []
+  const goal = chama.goal || { name: 'Shared goal', target: 0, saved: 0 }
+  const nextGoal = {
+    ...goal,
+    saved: goal.target > 0 ? Math.min(goal.target, (goal.saved || 0) + amount) : goal.saved || 0,
+  }
+  const nextState = {
+    contributions: [contribution, ...contributions],
+    balance: (Number(chama.balance) || 0) + amount,
+    goal: nextGoal,
+  }
+
+  const { error: updateError } = await supabase
+    .from('chamas')
+    .update({ ...nextState, updated_at: new Date().toISOString() })
+    .eq('id', id)
+
+  if (updateError) throw updateError
+  return nextState
+}
+
 export async function searchChamas(query) {
   const trimmedQuery = query.trim()
   if (!isSupabaseConfigured || !trimmedQuery) return []
