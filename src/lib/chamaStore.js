@@ -24,13 +24,15 @@ function writeLocal(key, value) {
 }
 
 export function getLocalChamaState() {
+  const storedBalance = localStorage.getItem(localKeys.balance)
+
   return {
     name: readLocal(localKeys.name, ''),
     city: readLocal(localKeys.city, ''),
     goal: readLocal(localKeys.goal, null),
     members: readLocal(localKeys.members, null),
     contributions: readLocal(localKeys.contributions, null),
-    balance: Number(localStorage.getItem(localKeys.balance)) || 428500,
+    balance: storedBalance === null ? 0 : Number(storedBalance) || 0,
   }
 }
 
@@ -48,7 +50,7 @@ export async function createChamaRecord({ name, city, goal, members, ownerId }) 
 
   const { data, error } = await supabase
     .from('chamas')
-    .insert({ name, city, goal, members, owner_id: ownerId })
+    .insert({ name, city, goal, members, contributions: [], balance: 0, owner_id: ownerId })
     .select('id')
     .single()
 
@@ -66,6 +68,19 @@ export async function getChamaRecord(id) {
     .single()
 
   if (error) throw error
+
+  if (Number(data.balance) === 428500 && (!data.contributions || data.contributions.length === 0)) {
+    const goal = data.goal && typeof data.goal === 'object' ? { ...data.goal, saved: 0 } : data.goal
+    const { data: cleanedData, error: cleanupError } = await supabase
+      .from('chamas')
+      .update({ balance: 0, contributions: [], goal, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select('id, name, city, goal, members, contributions, balance')
+      .single()
+
+    if (!cleanupError && cleanedData) return cleanedData
+  }
+
   return data
 }
 
