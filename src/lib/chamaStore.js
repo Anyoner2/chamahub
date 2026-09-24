@@ -94,7 +94,15 @@ export async function requestToJoinChama(chamaId, userId, requester) {
 
   const { data, error } = await supabase
     .from('chama_join_requests')
-    .upsert({ chama_id: chamaId, user_id: userId, requester_name: requester.name, requester_email: requester.email, status: 'pending' }, { onConflict: 'chama_id,user_id' })
+    .upsert({
+      chama_id: chamaId,
+      user_id: userId,
+      requester_name: requester.name,
+      requester_email: requester.email,
+      requester_phone_number: requester.phoneNumber || '',
+      requester_id_number: requester.idNumber || '',
+      status: 'pending',
+    }, { onConflict: 'chama_id,user_id' })
     .select('id, status')
     .single()
 
@@ -138,4 +146,44 @@ export async function getUserJoinRequests(userId) {
 
   if (error) throw error
   return data || []
+}
+
+export async function getUserMemberships(user) {
+  if (!isSupabaseConfigured || !user) return []
+
+  const phoneNumber = (user.phoneNumber || user.phone_number || '').trim()
+  const idNumber = (user.idNumber || user.id_number || '').trim()
+  const email = (user.email || '').trim().toLowerCase()
+
+  if (!phoneNumber && !idNumber && !email) return []
+
+  try {
+    const { data: chamaData, error } = await supabase
+      .from('chamas')
+      .select('id, name, city, goal, members')
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+
+    const matches = (chamaData || []).filter((chama) => {
+      const members = Array.isArray(chama.members) ? chama.members : []
+
+      return members.some((member) => {
+        const memberPhone = (member.phone_number || '').trim()
+        const memberId = (member.id_number || '').trim()
+        const memberEmail = (member.email || '').trim().toLowerCase()
+
+        return (
+          (phoneNumber && memberPhone && memberPhone === phoneNumber) ||
+          (idNumber && memberId && memberId === idNumber) ||
+          (email && memberEmail && memberEmail === email) ||
+          (member.user_id && member.user_id === user.id)
+        )
+      })
+    })
+
+    return matches
+  } catch {
+    return []
+  }
 }

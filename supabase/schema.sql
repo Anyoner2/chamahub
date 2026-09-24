@@ -28,6 +28,8 @@ create table if not exists public.chama_join_requests (
 
 alter table public.chama_join_requests add column if not exists requester_name text not null default 'New member';
 alter table public.chama_join_requests add column if not exists requester_email text not null default '';
+alter table public.chama_join_requests add column if not exists requester_phone_number text not null default '';
+alter table public.chama_join_requests add column if not exists requester_id_number text not null default '';
 
 alter table public.chamas enable row level security;
 alter table public.chama_join_requests enable row level security;

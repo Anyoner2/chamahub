@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
-import { createChamaRecord, getChamaJoinRequests, getLocalChamaState, getUserJoinRequests, requestToJoinChama, saveChamaRecord, saveLocalChamaState, searchChamas, updateJoinRequest } from './lib/chamaStore'
+import { createChamaRecord, getChamaJoinRequests, getLocalChamaState, getUserJoinRequests, getUserMemberships, requestToJoinChama, saveChamaRecord, saveLocalChamaState, searchChamas, updateJoinRequest } from './lib/chamaStore'
 import { isSupabaseConfigured, sendPasswordReset, signInWithPassword, signOut, signUpWithPassword, supabase, updateProfile } from './lib/supabase'
 
 const contributions = [
@@ -46,6 +46,7 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, chamaName, user, chamaI
   const [chamaSearchError, setChamaSearchError] = useState('')
   const [joinRequestStatus, setJoinRequestStatus] = useState({})
   const [myJoinRequests, setMyJoinRequests] = useState([])
+  const [matchedChamas, setMatchedChamas] = useState([])
   const [joinRequests, setJoinRequests] = useState([])
   const [showJoinRequests, setShowJoinRequests] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
@@ -101,6 +102,7 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, chamaName, user, chamaI
     }
 
     refreshMyJoinRequests()
+    getUserMemberships(user).then(setMatchedChamas).catch(() => setMatchedChamas([]))
     if (!supabase) return undefined
 
     const channel = supabase
@@ -210,6 +212,8 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, chamaName, user, chamaI
   function handleMember(event) {
     const formData = new FormData(event.currentTarget)
     const name = String(formData.get('member-name')).trim()
+    const phoneNumber = String(formData.get('member-phone') || '').trim()
+    const idNumber = String(formData.get('member-id') || '').trim()
     const memberTone = ['coral', 'sage', 'peach', 'gold'][dashboardMembers.length % 4]
 
     event.preventDefault()
@@ -229,6 +233,8 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, chamaName, user, chamaI
       initials: getInitials(name),
       status: 'Awaiting first contribution',
       tone: memberTone,
+      phone_number: phoneNumber,
+      id_number: idNumber,
     }
 
     setDashboardMembers((currentMembers) => [...currentMembers, nextMember])
@@ -255,6 +261,11 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, chamaName, user, chamaI
     setNotice(`Now viewing ${chama.name}.`)
   }
 
+  const joinedChamaList = [
+    ...myJoinRequests.filter((request) => request.status === 'approved').map((request) => request.chamas).filter(Boolean),
+    ...matchedChamas,
+  ].filter((chama, index, list) => chama && list.findIndex((item) => item && item.id === chama.id) === index)
+
   async function handleChamaSearch(event) {
     event.preventDefault()
     const query = chamaSearchQuery.trim()
@@ -277,7 +288,12 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, chamaName, user, chamaI
     setChamaSearchError('')
     setJoinRequestStatus((currentStatus) => ({ ...currentStatus, [chama.id]: 'loading' }))
     try {
-      await requestToJoinChama(chama.id, user.id, { name: user.firstName, email: user.email })
+      await requestToJoinChama(chama.id, user.id, {
+        name: user.firstName,
+        email: user.email,
+        phoneNumber: user.phoneNumber || '',
+        idNumber: user.idNumber || '',
+      })
       setJoinRequestStatus((currentStatus) => ({ ...currentStatus, [chama.id]: 'sent' }))
     } catch {
       setJoinRequestStatus((currentStatus) => ({ ...currentStatus, [chama.id]: 'error' }))
@@ -305,7 +321,7 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, chamaName, user, chamaI
     <main className="dashboard-shell">
       <nav className="dashboard-nav" aria-label="Dashboard navigation">
         <button className="brand dashboard-brand" onClick={onBack} aria-label="Return to ChamaHub home"><span className="brand-mark">C</span><span>ChamaHub</span></button>
-        <div className="dashboard-nav-meta"><button className="find-chama-button" onClick={() => { setChamaSearchError(''); setShowChamaSearch(true) }}>Find a chama <span>⌕</span></button>{myJoinRequests.filter((request) => request.status === 'approved').length > 0 && <button className="joined-badge" onClick={() => { setChamaSearchError(''); setShowJoinedChamas(true) }}>Joined circle</button>}{joinRequests.length > 0 && <button className="request-badge" onClick={() => setShowJoinRequests(true)}>{joinRequests.length} join request{joinRequests.length === 1 ? '' : 's'}</button>}<span className="status-dot"></span><span>{chamaName}</span><span className="nav-divider"></span><button className="sign-out-button" onClick={onSignOut}>Sign out</button><button className="profile-chip" onClick={() => setShowProfile(true)} aria-label="Open profile">{user.initials}</button></div>
+        <div className="dashboard-nav-meta"><button className="find-chama-button" onClick={() => { setChamaSearchError(''); setShowChamaSearch(true) }}>Find a chama <span>⌕</span></button>{joinedChamaList.length > 0 && <button className="joined-badge" onClick={() => { setChamaSearchError(''); setShowJoinedChamas(true) }}>Joined circle</button>}{joinRequests.length > 0 && <button className="request-badge" onClick={() => setShowJoinRequests(true)}>{joinRequests.length} join request{joinRequests.length === 1 ? '' : 's'}</button>}<span className="status-dot"></span><span>{chamaName}</span><span className="nav-divider"></span><button className="sign-out-button" onClick={onSignOut}>Sign out</button><button className="profile-chip" onClick={() => setShowProfile(true)} aria-label="Open profile">{user.initials}</button></div>
       </nav>
 
       <section className="dashboard-content">
@@ -322,10 +338,10 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, chamaName, user, chamaI
 
       {showContributionForm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowContributionForm(false) }}><form className="contribution-modal" onSubmit={handleContribution}><button type="button" className="modal-close" aria-label="Close contribution form" onClick={() => setShowContributionForm(false)}>×</button><span className="card-kicker">Live chama update</span><h2>Make a contribution</h2><p>Submit a payment and it will appear in the chama balance, goal, and activity feed immediately.</p><label>Member<select name="member" defaultValue={dashboardMembers[0]?.name || ''}>{dashboardMembers.map((member) => <option key={member.name} value={member.name}>{member.name}</option>)}</select></label><label>Amount<input name="amount" type="text" inputMode="numeric" defaultValue="KES 5,000" /></label><label>Payment method<select name="method" defaultValue="M-Pesa"><option value="M-Pesa">M-Pesa</option><option value="Bank transfer">Bank transfer</option><option value="Cash">Cash</option><option value="Wallet">Wallet</option></select></label><label>Notes<textarea name="note" rows="3" placeholder="e.g. Monthly share contribution"></textarea></label><button className="primary-button" type="submit">Sync contribution <span>↗</span></button></form></div>}
       {showGoalForm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowGoalForm(false) }}><form className="contribution-modal" onSubmit={handleGoal}><button type="button" className="modal-close" aria-label="Close goal form" onClick={() => setShowGoalForm(false)}>×</button><span className="card-kicker">Shared goal</span><h2>Update your goal</h2><p>Give the chama a clear target to move toward together.</p><label>Goal name<input name="goal-name" type="text" defaultValue={goal.name} /></label><label>Target amount<input name="goal-target" type="text" inputMode="numeric" defaultValue={`KES ${goal.target.toLocaleString('en-KE')}`} /></label><label>Saved so far<input name="goal-saved" type="text" inputMode="numeric" defaultValue={`KES ${goal.saved.toLocaleString('en-KE')}`} /></label><button className="primary-button" type="submit">Save goal <span>↗</span></button></form></div>}
-      {showMemberForm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowMemberForm(false) }}><form className="contribution-modal" onSubmit={handleMember}><button type="button" className="modal-close" aria-label="Close member form" onClick={() => setShowMemberForm(false)}>×</button><span className="card-kicker">New member</span><h2>Add to your circle</h2><p>Invite a new chama member and keep the group moving together.</p><label>Full name<input name="member-name" type="text" placeholder="e.g. Grace Waweru" /></label><button className="primary-button" type="submit">Add member <span>↗</span></button></form></div>}
+      {showMemberForm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowMemberForm(false) }}><form className="contribution-modal" onSubmit={handleMember}><button type="button" className="modal-close" aria-label="Close member form" onClick={() => setShowMemberForm(false)}>×</button><span className="card-kicker">New member</span><h2>Add to your circle</h2><p>Invite a new chama member and keep the group moving together.</p><label>Full name<input name="member-name" type="text" placeholder="e.g. Grace Waweru" /></label><label>Phone number<input name="member-phone" type="tel" placeholder="e.g. +254712345678" /></label><label>ID number<input name="member-id" type="text" placeholder="e.g. 12345678" /></label><button className="primary-button" type="submit">Add member <span>↗</span></button></form></div>}
       {detailView && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetailView(null) }}><section className="contribution-modal detail-modal" aria-labelledby="detail-title"><button type="button" className="modal-close" aria-label="Close details" onClick={() => setDetailView(null)}>×</button><span className="card-kicker">{detailView === 'activity' ? 'Activity log' : 'Your circle'}</span><h2 id="detail-title">{detailView === 'activity' ? 'All contributions' : 'Manage members'}</h2><p>{detailView === 'activity' ? 'A clear record of every recent payment.' : 'See who is up to date and who needs a reminder.'}</p>{detailView === 'activity' ? <div className="contribution-list detail-list">{dashboardContributions.map((contribution, index) => <div className="contribution-row" key={`${contribution.member}-${contribution.date}-${index}`}><span className={`avatar ${contribution.tone}`}>{contribution.initials}</span><div><strong>{contribution.member}</strong><small>{contribution.date}</small></div><b>{contribution.amount}</b></div>)}</div> : <div className="member-list detail-list"><button className="primary-button member-add-button" type="button" onClick={() => { setShowMemberForm(true); setDetailView(null) }}>+ Add member</button>{dashboardMembers.map((member) => <div className="member-row" key={member.name}><span className={`avatar ${member.tone}`}>{member.initials}</span><div><strong>{member.name}</strong><small className={member.status.startsWith('Due') || member.status.includes('Reminder') || member.status.includes('Awaiting') ? 'due-status' : ''}>{member.status}</small></div><button className="remind-button" onClick={() => { setDetailView(null); handleReminder(member.name) }}>Remind</button></div>)}</div>}</section></div>}
       {showChamaSearch && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowChamaSearch(false) }}><section className="contribution-modal search-modal" aria-labelledby="search-title"><button type="button" className="modal-close" aria-label="Close chama search" onClick={() => setShowChamaSearch(false)}>×</button><span className="card-kicker">Grow together</span><h2 id="search-title">Find a chama</h2><p>Search for a chama by its name and discover your next circle.</p>{myJoinRequests.length > 0 && <div className="my-requests"><strong>Your requests</strong>{myJoinRequests.slice(0, 3).map((request) => <div className="my-request" key={request.id}><span>{request.chamas?.name || 'Chama'}</span><b className={`request-status ${request.status}`}>{request.status}</b></div>)}</div>}<form className="chama-search-form" onSubmit={handleChamaSearch}><input type="search" value={chamaSearchQuery} onChange={(event) => setChamaSearchQuery(event.target.value)} placeholder="e.g. Kitui Women&apos;s Circle" aria-label="Search chamas" /><button className="primary-button" type="submit">{chamaSearchLoading ? 'Searching...' : 'Search'} <span>⌕</span></button></form>{chamaSearchError && <p className="auth-error" role="alert">{chamaSearchError}</p>}{chamaSearchQuery && !chamaSearchLoading && !chamaSearchError && chamaSearchResults.length === 0 && <p className="empty-search">No chamas found yet. Try another name.</p>}<div className="chama-results">{chamaSearchResults.map((result) => { const requestStatus = joinRequestStatus[result.id]; const existingRequest = myJoinRequests.find((request) => request.chama_id === result.id); return <article className="chama-result" key={result.id}><span className="goal-icon">✦</span><div><strong>{result.name}</strong><small>{result.city || 'Kenya'} · {result.goal?.name || 'Shared goal'}</small></div><button type="button" className="remind-button" disabled={requestStatus === 'loading' || requestStatus === 'sent' || existingRequest?.status === 'pending' || existingRequest?.status === 'approved'} onClick={() => handleJoinRequest(result)}>{existingRequest?.status === 'approved' ? 'Joined' : existingRequest?.status === 'pending' || requestStatus === 'sent' ? 'Requested' : requestStatus === 'loading' ? 'Sending...' : 'Request to join'}</button></article> })}</div></section></div>}
-      {showJoinedChamas && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowJoinedChamas(false) }}><section className="contribution-modal search-modal" aria-labelledby="joined-title"><button type="button" className="modal-close" aria-label="Close joined chamas" onClick={() => setShowJoinedChamas(false)}>×</button><span className="card-kicker">Your circles</span><h2 id="joined-title">Joined chamas</h2><p>Jump into the circles you already belong to and keep momentum going.</p><div className="chama-results">{myJoinRequests.filter((request) => request.status === 'approved').map((request) => <article className="chama-result" key={request.id}><span className="goal-icon">✦</span><div><strong>{request.chamas?.name || 'Chama'}</strong><small>{request.chamas?.city || 'Kenya'} · {request.chamas?.goal?.name || 'Shared goal'}</small></div><button type="button" className="remind-button" onClick={() => handleJoinedChamaSelect(request.chamas)}>Open</button></article>)}</div>{myJoinRequests.filter((request) => request.status === 'approved').length === 0 && <p className="empty-search">No approved chama memberships yet. Search and join one to get started.</p>}</section></div>}
+      {showJoinedChamas && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowJoinedChamas(false) }}><section className="contribution-modal search-modal" aria-labelledby="joined-title"><button type="button" className="modal-close" aria-label="Close joined chamas" onClick={() => setShowJoinedChamas(false)}>×</button><span className="card-kicker">Your circles</span><h2 id="joined-title">Joined chamas</h2><p>Jump into the circles you already belong to and keep momentum going.</p><div className="chama-results">{joinedChamaList.map((chama) => <article className="chama-result" key={chama.id}><span className="goal-icon">✦</span><div><strong>{chama.name}</strong><small>{chama.city || 'Kenya'} · {chama.goal?.name || 'Shared goal'}</small></div><button type="button" className="remind-button" onClick={() => handleJoinedChamaSelect(chama)}>Open</button></article>)}</div>{joinedChamaList.length === 0 && <p className="empty-search">No approved chama memberships yet. Search and join one to get started.</p>}</section></div>}
       {showJoinRequests && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowJoinRequests(false) }}><section className="contribution-modal detail-modal" aria-labelledby="requests-title"><button type="button" className="modal-close" aria-label="Close join requests" onClick={() => setShowJoinRequests(false)}>×</button><span className="card-kicker">Your circle</span><h2 id="requests-title">Join requests</h2><p>Review people who want to contribute to {chamaName}.</p><div className="request-list">{joinRequests.map((request) => <article className="request-row" key={request.id}><span className="avatar sage">{(request.requester_name || request.user_id).slice(0, 2).toUpperCase()}</span><div><strong>{request.requester_name || 'New member'}</strong><small>{request.requester_email || 'Member request'} · {new Date(request.created_at).toLocaleDateString()}</small></div><button className="approve-button" onClick={() => handleRequestDecision(request, 'approved')}>Approve</button><button className="decline-button" onClick={() => handleRequestDecision(request, 'declined')}>Decline</button></article>)}</div></section></div>}
       {showProfile && <ProfileModal user={user} onClose={() => setShowProfile(false)} onSave={(fullName) => { onProfileUpdate(fullName); setShowProfile(false) }} />}
     </main>
@@ -334,6 +350,8 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, chamaName, user, chamaI
 
 function ProfileModal({ user, onClose, onSave }) {
   const [fullName, setFullName] = useState(user.firstName)
+  const [phoneNumber, setPhoneNumber] = useState(user.phoneNumber || '')
+  const [idNumber, setIdNumber] = useState(user.idNumber || '')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -343,7 +361,7 @@ function ProfileModal({ user, onClose, onSave }) {
     setSaving(true)
     setError('')
     try {
-      const updatedUser = await updateProfile(fullName.trim())
+      const updatedUser = await updateProfile(fullName.trim(), phoneNumber.trim(), idNumber.trim())
       onSave(updatedUser)
     } catch (profileError) {
       setError(profileError.message || 'We could not update your profile.')
@@ -358,6 +376,8 @@ function ProfileModal({ user, onClose, onSave }) {
 function AuthModal({ onAuthenticated, onClose }) {
   const [mode, setMode] = useState('login')
   const [fullName, setFullName] = useState('')
+  const [phoneNumber, setPhoneNumber] = useState('')
+  const [idNumber, setIdNumber] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -372,7 +392,7 @@ function AuthModal({ onAuthenticated, onClose }) {
     try {
       const user = mode === 'login'
         ? await signInWithPassword(email, password)
-        : await signUpWithPassword(email, password, fullName)
+        : await signUpWithPassword(email, password, fullName, phoneNumber, idNumber)
 
       if (user) {
         onAuthenticated(user)
@@ -415,7 +435,11 @@ function AuthModal({ onAuthenticated, onClose }) {
           <button type="button" className={mode === 'login' ? 'active' : ''} onClick={() => { setMode('login'); setError('') }}>Log in</button>
           <button type="button" className={mode === 'signup' ? 'active' : ''} onClick={() => { setMode('signup'); setError('') }}>Sign up</button>
         </div>
-        {mode === 'signup' && <label>Full name<input name="full-name" type="text" autoComplete="name" value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="e.g. Amina Mohamed" required /></label>}
+        {mode === 'signup' && (<>
+          <label>Full name<input name="full-name" type="text" autoComplete="name" value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="e.g. Amina Mohamed" required /></label>
+          <label>Phone number<input name="phone-number" type="tel" autoComplete="tel" value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value)} placeholder="+254712345678" /></label>
+          <label>ID number<input name="id-number" type="text" autoComplete="off" value={idNumber} onChange={(event) => setIdNumber(event.target.value)} placeholder="12345678" /></label>
+        </>)}
         <label>Email address<input name="email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" required /></label>
         <label>Password<input name="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 6 characters" minLength="6" required /></label>
         {mode === 'login' && <button type="button" className="forgot-password" onClick={handlePasswordReset} disabled={loading}>Forgot password?</button>}
@@ -457,7 +481,14 @@ function App() {
     const nameParts = displayName.trim().split(/\s+/).filter(Boolean)
     const firstName = nameParts[0] || 'friend'
     const initials = nameParts.length > 1 ? `${nameParts[0][0]}${nameParts[nameParts.length - 1][0]}` : firstName.slice(0, 2)
-    return { id: authUser.id, email, firstName: firstName.charAt(0).toUpperCase() + firstName.slice(1), initials: initials.toUpperCase() }
+    return {
+      id: authUser.id,
+      email,
+      firstName: firstName.charAt(0).toUpperCase() + firstName.slice(1),
+      initials: initials.toUpperCase(),
+      phoneNumber: authUser.user_metadata?.phone_number || '',
+      idNumber: authUser.user_metadata?.id_number || '',
+    }
   }
 
   function requestEntry(destination) {

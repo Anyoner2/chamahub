@@ -16,12 +16,18 @@ export async function signInWithPassword(email, password) {
   return data.user
 }
 
-export async function signUpWithPassword(email, password, fullName) {
+export async function signUpWithPassword(email, password, fullName, phoneNumber = '', idNumber = '') {
   if (!supabase) throw new Error('Supabase is not configured yet.')
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: { data: { full_name: fullName } },
+    options: {
+      data: {
+        full_name: fullName,
+        phone_number: phoneNumber,
+        id_number: idNumber,
+      },
+    },
   })
   if (error) throw error
   return data.user
@@ -33,9 +39,15 @@ export async function signOut() {
   if (error) throw error
 }
 
-export async function updateProfile(fullName) {
+export async function updateProfile(fullName, phoneNumber = '', idNumber = '') {
   if (!supabase) throw new Error('Supabase is not configured yet.')
-  const { data, error } = await supabase.auth.updateUser({ data: { full_name: fullName } })
+  const { data, error } = await supabase.auth.updateUser({
+    data: {
+      full_name: fullName,
+      phone_number: phoneNumber,
+      id_number: idNumber,
+    },
+  })
   if (error) throw error
   return data.user
 }
