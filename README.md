@@ -8,6 +8,8 @@ The app keeps a local fallback when the environment variables are missing. Once 
 
 To clear the current Supabase chama data before launch, run [supabase/reset-chamas.sql](supabase/reset-chamas.sql) in the Supabase SQL editor. After that, authenticated users can create their own chama from the `Start your chama` flow.
 
+To enforce chairman-only chama creation on an existing project, also run [supabase/owner-controls.sql](supabase/owner-controls.sql) in the Supabase SQL editor. The chairman is the user who creates the chama; only that account can add members or approve join requests.
+
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
 Currently, two official plugins are available:

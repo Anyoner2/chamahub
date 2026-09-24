@@ -34,23 +34,12 @@ alter table public.chama_join_requests add column if not exists requester_id_num
 alter table public.chamas enable row level security;
 alter table public.chama_join_requests enable row level security;
 
--- Temporary anonymous policies for the current MVP. Replace these with
--- authenticated, owner-scoped policies before production use.
+-- Chamas can be searched by signed-in users, but only their chairman can
+-- create or update the chama record.
 create policy "Allow anonymous chama reads"
   on public.chamas for select
   to anon
   using (true);
-
-create policy "Allow anonymous chama inserts"
-  on public.chamas for insert
-  to anon
-  with check (true);
-
-create policy "Allow anonymous chama updates"
-  on public.chamas for update
-  to anon
-  using (true)
-  with check (true);
 
 create policy "Allow signed-in chama reads"
   on public.chamas for select
@@ -60,7 +49,7 @@ create policy "Allow signed-in chama reads"
 create policy "Allow signed-in chama inserts"
   on public.chamas for insert
   to authenticated
-  with check (true);
+  with check (owner_id = auth.uid());
 
 create policy "Allow signed-in chama updates"
   on public.chamas for update
