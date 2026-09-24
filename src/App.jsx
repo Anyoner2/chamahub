@@ -19,20 +19,21 @@ const initialMembers = [
 const defaultGoal = { name: 'New meeting space', target: 500000, saved: 360000 }
 
 function Dashboard({ onBack, onProfileUpdate, onSignOut, chamaName, user, chamaId }) {
+  const hasChama = Boolean(chamaId)
   const [dashboardContributions, setDashboardContributions] = useState(() => {
     const saved = localStorage.getItem('chamahub-contributions')
-    return saved ? JSON.parse(saved) : contributions
+    return saved && (!isSupabaseConfigured || hasChama) ? JSON.parse(saved) : isSupabaseConfigured ? [] : contributions
   })
 
   const [dashboardMembers, setDashboardMembers] = useState(() => {
     const saved = localStorage.getItem('chamahub-members')
-    return saved ? JSON.parse(saved) : initialMembers
+    return saved && (!isSupabaseConfigured || hasChama) ? JSON.parse(saved) : isSupabaseConfigured ? [] : initialMembers
   })
 
-  const [balance, setBalance] = useState(() => Number(localStorage.getItem('chamahub-balance')) || 428500)
+  const [balance, setBalance] = useState(() => isSupabaseConfigured && !hasChama ? 0 : Number(localStorage.getItem('chamahub-balance')) || 428500)
   const [goal, setGoal] = useState(() => {
     const saved = localStorage.getItem('chamahub-goal')
-    return saved ? JSON.parse(saved) : defaultGoal
+    return saved && (!isSupabaseConfigured || hasChama) ? JSON.parse(saved) : isSupabaseConfigured ? { name: 'No shared goal yet', target: 0, saved: 0 } : defaultGoal
   })
   const [showContributionForm, setShowContributionForm] = useState(false)
   const [showGoalForm, setShowGoalForm] = useState(false)
@@ -87,7 +88,7 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, chamaName, user, chamaI
         setDashboardContributions(updatedChama.contributions || [])
         setDashboardMembers(updatedChama.members || [])
         setBalance(updatedChama.balance || 0)
-        setGoal(updatedChama.goal || defaultGoal)
+        setGoal(updatedChama.goal || { name: 'No shared goal yet', target: 0, saved: 0 })
       })
       .subscribe()
 
@@ -330,7 +331,7 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, chamaName, user, chamaI
 
         <div className="dashboard-grid">
           <article className="dashboard-card balance-panel"><div className="dashboard-card-label"><span>Total chama balance</span><span className="trend-label">↗ 12.8%</span></div><strong>KES {balance.toLocaleString('en-KE')}</strong><p>Up KES 48,500 since last month</p><div className="mini-chart"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
-          <article className="dashboard-card goal-panel"><div className="dashboard-card-label"><span>Shared goal</span><span className="goal-percent">{Math.min(100, Math.round((goal.saved / goal.target) * 100))}%</span></div><h2>{goal.name}</h2><p>KES {goal.saved.toLocaleString('en-KE')} of KES {goal.target.toLocaleString('en-KE')}</p><div className="progress-track"><span style={{ width: `${Math.min(100, (goal.saved / goal.target) * 100)}%` }}></span></div><div className="goal-footer"><span>Target: Dec 2026</span><strong>KES {(goal.target - goal.saved).toLocaleString('en-KE')} left</strong></div><button className="goal-edit-button" onClick={() => { setNotice(''); setShowGoalForm(true) }}>Update goal <span>↗</span></button></article>
+          <article className="dashboard-card goal-panel"><div className="dashboard-card-label"><span>Shared goal</span><span className="goal-percent">{goal.target > 0 ? Math.min(100, Math.round((goal.saved / goal.target) * 100)) : 0}%</span></div><h2>{goal.name}</h2><p>KES {goal.saved.toLocaleString('en-KE')} of KES {goal.target.toLocaleString('en-KE')}</p><div className="progress-track"><span style={{ width: `${goal.target > 0 ? Math.min(100, (goal.saved / goal.target) * 100) : 0}%` }}></span></div><div className="goal-footer"><span>Target: Dec 2026</span><strong>KES {Math.max(0, goal.target - goal.saved).toLocaleString('en-KE')} left</strong></div><button className="goal-edit-button" onClick={() => { setNotice(''); setShowGoalForm(true) }}>Update goal <span>↗</span></button></article>
           <article className="dashboard-card contribution-panel"><div className="panel-heading"><div><span className="card-kicker">Activity</span><h2>Recent contributions</h2></div><button className="quiet-button" onClick={() => setDetailView('activity')}>View all <span>↗</span></button></div><div className="contribution-list">{dashboardContributions.slice(0, 3).map((contribution, index) => <div className="contribution-row" key={`${contribution.member}-${contribution.date}-${index}`}><span className={`avatar ${contribution.tone}`}>{contribution.initials}</span><div><strong>{contribution.member}</strong><small>{contribution.date}</small></div><b>{contribution.amount}</b></div>)}</div></article>
           <article className="dashboard-card members-panel"><div className="panel-heading"><div><span className="card-kicker">Your circle</span><h2>Members <span className="count-badge">{dashboardMembers.length}</span></h2></div><button className="quiet-button" onClick={() => setDetailView('members')}>Manage <span>↗</span></button></div>{dashboardMembers.some((member) => member.status.includes('Awaiting') || member.status.includes('Reminder')) && <p className="member-reminder-bar">{dashboardMembers.filter((member) => member.status.includes('Awaiting') || member.status.includes('Reminder')).length} members need a follow-up this month.</p>}<div className="member-list">{dashboardMembers.slice(0, 4).map((member) => <div className="member-row" key={member.name}><span className={`avatar ${member.tone}`}>{member.initials}</span><div><strong>{member.name}</strong><small className={member.status.startsWith('Due') || member.status.includes('Reminder') || member.status.includes('Awaiting') ? 'due-status' : ''}>{member.status}</small></div><button type="button" className="remind-button small" onClick={() => handleReminder(member.name)}>Remind</button></div>)}</div></article>
         </div>
@@ -455,6 +456,7 @@ function App() {
   const [showDashboard, setShowDashboard] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [showMemberSetup, setShowMemberSetup] = useState(false)
+  const [memberSetupError, setMemberSetupError] = useState('')
   const [chamaName, setChamaName] = useState(() => isSupabaseConfigured ? '' : getLocalChamaState().name)
   const [chamaId, setChamaId] = useState(() => isSupabaseConfigured ? '' : localStorage.getItem('chamahub-chama-id') || '')
   const [user, setUser] = useState(null)
@@ -515,14 +517,17 @@ function App() {
     }
 
     const goal = { name: goalName, target, saved: 0 }
-    const localState = getLocalChamaState()
+    const localState = isSupabaseConfigured
+      ? { name, city, goal, members: [], contributions: [], balance: 0 }
+      : getLocalChamaState()
     saveLocalChamaState({ ...localState, name, city, goal })
     setChamaName(name)
+    setMemberSetupError('')
     setShowOnboarding(false)
     setShowMemberSetup(true)
   }
 
-  function handleMemberSetup(event) {
+  async function handleMemberSetup(event) {
     const formData = new FormData(event.currentTarget)
     const memberNames = ['member-1', 'member-2', 'member-3', 'member-4']
       .map((field) => String(formData.get(field) || '').trim())
@@ -548,9 +553,14 @@ function App() {
     const nextState = { ...state, members }
     saveLocalChamaState(nextState)
     if (isSupabaseConfigured) {
-      createChamaRecord({ ...nextState, ownerId: user.id })
-        .then((record) => { localStorage.setItem('chamahub-chama-id', record.id); setChamaId(record.id) })
-        .catch(() => console.error('Unable to sync chama with Supabase.'))
+      try {
+        const record = await createChamaRecord({ ...nextState, ownerId: user.id })
+        localStorage.setItem('chamahub-chama-id', record.id)
+        setChamaId(record.id)
+      } catch {
+        setMemberSetupError('We could not create your chama. Check your Supabase policies and try again.')
+        return
+      }
     }
     setShowMemberSetup(false)
     setShowDashboard(true)
@@ -605,6 +615,7 @@ function App() {
             <span className="card-kicker">Invite members</span>
             <h2>Add your first circle</h2>
             <p>Bring in the people who will contribute and grow the chama with you.</p>
+            {memberSetupError && <p className="auth-error" role="alert">{memberSetupError}</p>}
             <label>Member 1<input name="member-1" type="text" placeholder="e.g. Amina Mohamed" defaultValue="Amina Mohamed" /></label>
             <label>Member 2<input name="member-2" type="text" placeholder="e.g. Joseph Otieno" /></label>
             <label>Member 3<input name="member-3" type="text" placeholder="e.g. Njeri Kamau" /></label>
