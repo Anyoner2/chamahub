@@ -168,6 +168,13 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, chamaName, user, chamaI
   }
 
   function handleContribution(event) {
+    event.preventDefault()
+    if (!chamaId) {
+      setShowContributionForm(false)
+      setNotice('Create or join a chama before recording a contribution.')
+      return
+    }
+
     const formData = new FormData(event.currentTarget)
     const amount = parseCurrency(formData.get('amount'))
     const memberName = String(formData.get('member') || '').trim()
@@ -175,7 +182,6 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, chamaName, user, chamaI
     const note = String(formData.get('note') || '').trim()
     const member = dashboardMembers.find((item) => item.name === memberName)
 
-    event.preventDefault()
     if (amount > 0 && member) {
       const newContribution = {
         member: shortName(member.name),
@@ -326,7 +332,7 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, chamaName, user, chamaI
       </nav>
 
       <section className="dashboard-content">
-        <div className="dashboard-heading"><div><p className="eyebrow"><span></span> Monday, 14 September 2026</p><h1>Good morning, {user.firstName}.</h1><p className="dashboard-intro">Here&apos;s what&apos;s moving in your chama this week.</p></div><div className="dashboard-actions"><button className="secondary-button" onClick={() => { setNotice(''); setShowContributionForm(true) }}>Make a contribution <span>↗</span></button><button className="primary-button dashboard-action" onClick={() => { setNotice(''); setShowContributionForm(true) }}>+ Record contribution</button></div></div>
+        <div className="dashboard-heading"><div><p className="eyebrow"><span></span> Monday, 14 September 2026</p><h1>Good morning, {user.firstName}.</h1><p className="dashboard-intro">{chamaId ? "Here's what's moving in your chama this week." : 'Create or join a chama to start tracking contributions.'}</p></div><div className="dashboard-actions"><button className="secondary-button" disabled={!chamaId} onClick={() => { setNotice(''); setShowContributionForm(true) }}>Make a contribution <span>↗</span></button><button className="primary-button dashboard-action" disabled={!chamaId} onClick={() => { setNotice(''); setShowContributionForm(true) }}>+ Record contribution</button></div></div>
         {notice && <p className={`dashboard-notice${celebrating ? ' is-celebrating' : ''}`} role="status"><span className="notice-spark" aria-hidden="true">✦</span>{notice}</p>}
 
         <div className="dashboard-grid">
