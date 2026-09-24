@@ -6,6 +6,8 @@ Copy `.env.example` to `.env.local` and fill in the Supabase project URL and ano
 
 The app keeps a local fallback when the environment variables are missing. Once configured, onboarding creates a `chamas` row and dashboard changes sync to that row. The checked-in schema includes temporary anonymous policies for this MVP; replace them with authenticated, owner-scoped policies before production use.
 
+To clear the current Supabase chama data before launch, run [supabase/reset-chamas.sql](supabase/reset-chamas.sql) in the Supabase SQL editor. After that, authenticated users can create their own chama from the `Start your chama` flow.
+
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
 Currently, two official plugins are available:
