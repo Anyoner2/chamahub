@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
-import { createChamaRecord, getChamaJoinRequests, getLocalChamaState, getUserJoinRequests, getUserMemberships, recordChamaContribution, requestToJoinChama, saveChamaRecord, saveLocalChamaState, searchChamas, updateJoinRequest } from './lib/chamaStore'
+import { createChamaRecord, getChamaJoinRequests, getChamaRecord, getLocalChamaState, getUserJoinRequests, getUserMemberships, recordChamaContribution, requestToJoinChama, saveChamaRecord, saveLocalChamaState, searchChamas, updateJoinRequest } from './lib/chamaStore'
 import { isSupabaseConfigured, sendPasswordReset, signInWithPassword, signOut, signUpWithPassword, supabase, updateProfile } from './lib/supabase'
 
 const contributions = [
@@ -35,6 +35,7 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, chamaName, user, chamaI
     const saved = localStorage.getItem('chamahub-goal')
     return saved && (!isSupabaseConfigured || hasChama) ? JSON.parse(saved) : isSupabaseConfigured ? { name: 'No shared goal yet', target: 0, saved: 0 } : defaultGoal
   })
+  const [isRemoteReady, setIsRemoteReady] = useState(() => !isSupabaseConfigured || !chamaId)
   const [showContributionForm, setShowContributionForm] = useState(false)
   const [showGoalForm, setShowGoalForm] = useState(false)
   const [showMemberForm, setShowMemberForm] = useState(false)
@@ -56,6 +57,8 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, chamaName, user, chamaI
   const remoteUpdateRef = useRef(false)
 
   useEffect(() => {
+    if (!isRemoteReady) return
+
     localStorage.setItem('chamahub-contributions', JSON.stringify(dashboardContributions))
     localStorage.setItem('chamahub-members', JSON.stringify(dashboardMembers))
     localStorage.setItem('chamahub-balance', String(balance))
@@ -76,7 +79,28 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, chamaName, user, chamaI
         balance,
       }).catch(() => console.error('Unable to sync chama changes with Supabase.'))
     }
-  }, [balance, chamaId, chamaName, dashboardContributions, dashboardMembers, goal])
+  }, [balance, chamaId, chamaName, dashboardContributions, dashboardMembers, goal, isRemoteReady])
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !chamaId) {
+      setIsRemoteReady(true)
+      return undefined
+    }
+
+    setIsRemoteReady(false)
+    getChamaRecord(chamaId).then((record) => {
+      if (!record) return
+      remoteUpdateRef.current = true
+      setDashboardContributions(record.contributions || [])
+      setDashboardMembers(record.members || [])
+      setBalance(Number(record.balance) || 0)
+      setGoal(record.goal || { name: 'No shared goal yet', target: 0, saved: 0 })
+    }).catch(() => {
+      setNotice('We could not load this chama from Supabase.')
+    }).finally(() => setIsRemoteReady(true))
+
+    return undefined
+  }, [chamaId])
 
   useEffect(() => {
     if (!supabase || !chamaId) return undefined
