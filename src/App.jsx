@@ -609,19 +609,12 @@ function App() {
 
     event.preventDefault()
 
-    const members = memberNames.length > 0
-      ? memberNames.map((name, index) => ({
-          name,
-          initials: name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'CH',
-          status: index === 0 ? 'Paid this month' : 'Awaiting first contribution',
-          tone: ['coral', 'sage', 'peach', 'gold'][index % 4],
-        }))
-      : [{
-          name: 'Amina Mohamed',
-          initials: 'AM',
-          status: 'Paid this month',
-          tone: 'coral',
-        }]
+    const members = memberNames.map((name, index) => ({
+      name,
+      initials: name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'CH',
+      status: 'Awaiting first contribution',
+      tone: ['coral', 'sage', 'peach', 'gold'][index % 4],
+    }))
 
     const state = getLocalChamaState()
     const nextState = { ...state, members }
@@ -690,7 +683,7 @@ function App() {
             <h2>Add your first circle</h2>
             <p>Bring in the people who will contribute and grow the chama with you.</p>
             {memberSetupError && <p className="auth-error" role="alert">{memberSetupError}</p>}
-            <label>Member 1<input name="member-1" type="text" placeholder="e.g. Amina Mohamed" defaultValue="Amina Mohamed" /></label>
+            <label>Member 1<input name="member-1" type="text" placeholder="e.g. Amina Mohamed" /></label>
             <label>Member 2<input name="member-2" type="text" placeholder="e.g. Joseph Otieno" /></label>
             <label>Member 3<input name="member-3" type="text" placeholder="e.g. Njeri Kamau" /></label>
             <label>Member 4<input name="member-4" type="text" placeholder="e.g. Brian Wekesa" /></label>

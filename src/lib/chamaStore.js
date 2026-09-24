@@ -69,11 +69,16 @@ export async function getChamaRecord(id) {
 
   if (error) throw error
 
-  if (Number(data.balance) === 428500 && (!data.contributions || data.contributions.length === 0)) {
+  const cleanedMembers = Array.isArray(data.members)
+    ? data.members.filter((member) => !(member.name === 'Amina Mohamed' && member.initials === 'AM' && member.status === 'Paid this month' && !member.phone_number && !member.id_number))
+    : []
+  const hasLegacyAmina = cleanedMembers.length !== (Array.isArray(data.members) ? data.members.length : 0)
+
+  if (hasLegacyAmina || (Number(data.balance) === 428500 && (!data.contributions || data.contributions.length === 0))) {
     const goal = data.goal && typeof data.goal === 'object' ? { ...data.goal, saved: 0 } : data.goal
     const { data: cleanedData, error: cleanupError } = await supabase
       .from('chamas')
-      .update({ balance: 0, contributions: [], goal, updated_at: new Date().toISOString() })
+      .update({ members: cleanedMembers, balance: Number(data.balance) === 428500 ? 0 : data.balance, contributions: Number(data.balance) === 428500 ? [] : data.contributions, goal: Number(data.balance) === 428500 ? goal : data.goal, updated_at: new Date().toISOString() })
       .eq('id', id)
       .select('id, name, city, goal, members, contributions, balance')
       .single()
