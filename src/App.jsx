@@ -18,7 +18,7 @@ const initialMembers = [
 
 const defaultGoal = { name: 'New meeting space', target: 500000, saved: 360000 }
 
-function Dashboard({ onBack, onProfileUpdate, onSignOut, chamaName, user, chamaId }) {
+function Dashboard({ onBack, onProfileUpdate, onSignOut, onChamaSelect, chamaName, user, chamaId }) {
   const hasChama = Boolean(chamaId)
   const [dashboardContributions, setDashboardContributions] = useState(() => {
     const saved = localStorage.getItem('chamahub-contributions')
@@ -308,9 +308,9 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, chamaName, user, chamaI
   }
 
   function handleJoinedChamaSelect(chama) {
-    if (!chama?.name) return
+    if (!chama?.id || !chama?.name) return
 
-    setChamaName(chama.name)
+    onChamaSelect(chama)
     saveLocalChamaState({ ...getLocalChamaState(), name: chama.name })
     setShowJoinedChamas(false)
     setShowChamaSearch(false)
@@ -639,7 +639,7 @@ function App() {
     setUser(null)
   }
 
-  if (showDashboard && user) return <Dashboard onBack={() => setShowDashboard(false)} onProfileUpdate={(updatedUser) => setUser(toUserProfile(updatedUser))} onSignOut={handleSignOut} chamaName={chamaName} user={user} chamaId={chamaId} />
+  if (showDashboard && user) return <Dashboard onBack={() => setShowDashboard(false)} onProfileUpdate={(updatedUser) => setUser(toUserProfile(updatedUser))} onSignOut={handleSignOut} onChamaSelect={(chama) => { setChamaId(chama.id); setChamaName(chama.name); localStorage.setItem('chamahub-chama-id', chama.id) }} chamaName={chamaName} user={user} chamaId={chamaId} />
 
   return (
     <main>

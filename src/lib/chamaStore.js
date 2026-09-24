@@ -238,7 +238,7 @@ export async function getUserMemberships(user) {
   try {
     const { data: chamaData, error } = await supabase
       .from('chamas')
-      .select('id, name, city, goal, members')
+      .select('id, name, city, goal, members, owner_id')
       .order('created_at', { ascending: false })
 
     if (error) throw error
@@ -246,7 +246,7 @@ export async function getUserMemberships(user) {
     const matches = (chamaData || []).filter((chama) => {
       const members = Array.isArray(chama.members) ? chama.members : []
 
-      return members.some((member) => {
+      return chama.owner_id === user.id || members.some((member) => {
         const memberPhone = (member.phone_number || '').trim()
         const memberId = (member.id_number || '').trim()
         const memberEmail = (member.email || '').trim().toLowerCase()
