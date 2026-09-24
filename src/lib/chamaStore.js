@@ -69,6 +69,19 @@ export async function getChamaRecord(id) {
   return data
 }
 
+export async function getUserOwnedChamas(userId) {
+  if (!isSupabaseConfigured || !userId) return []
+
+  const { data, error } = await supabase
+    .from('chamas')
+    .select('id, name, city, goal, members, contributions, balance')
+    .eq('owner_id', userId)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return data || []
+}
+
 export async function saveChamaRecord(id, state) {
   if (!isSupabaseConfigured || !id) return
 

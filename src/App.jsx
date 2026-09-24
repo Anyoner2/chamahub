@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
-import { createChamaRecord, getChamaJoinRequests, getChamaRecord, getLocalChamaState, getUserJoinRequests, getUserMemberships, recordChamaContribution, requestToJoinChama, saveChamaRecord, saveLocalChamaState, searchChamas, updateJoinRequest } from './lib/chamaStore'
+import { createChamaRecord, getChamaJoinRequests, getChamaRecord, getLocalChamaState, getUserJoinRequests, getUserMemberships, getUserOwnedChamas, recordChamaContribution, requestToJoinChama, saveChamaRecord, saveLocalChamaState, searchChamas, updateJoinRequest } from './lib/chamaStore'
 import { isSupabaseConfigured, sendPasswordReset, signInWithPassword, signOut, signUpWithPassword, supabase, updateProfile } from './lib/supabase'
 
 const contributions = [
@@ -536,6 +536,20 @@ function App() {
 
     return () => listener.subscription.unsubscribe()
   }, [])
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !user?.id) return undefined
+
+    getUserOwnedChamas(user.id).then((ownedChamas) => {
+      const ownedChama = ownedChamas[0]
+      if (!ownedChama) return
+      setChamaId(ownedChama.id)
+      setChamaName(ownedChama.name || '')
+      localStorage.setItem('chamahub-chama-id', ownedChama.id)
+    }).catch(() => undefined)
+
+    return undefined
+  }, [user?.id])
 
   function toUserProfile(authUser) {
     const email = authUser.email || ''
