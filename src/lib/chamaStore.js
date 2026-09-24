@@ -25,7 +25,7 @@ function writeLocal(key, value) {
 
 export function getLocalChamaState() {
   return {
-    name: readLocal(localKeys.name, 'Kitui Women\'s Circle'),
+    name: readLocal(localKeys.name, ''),
     city: readLocal(localKeys.city, ''),
     goal: readLocal(localKeys.goal, null),
     members: readLocal(localKeys.members, null),
