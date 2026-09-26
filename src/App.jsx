@@ -655,6 +655,16 @@ function App() {
       </section>
 
       <section className="ticker" id="about"><span>Trusted by chamas across Kenya</span><i></i><span>Save with purpose</span><i></i><span>Grow with confidence</span><i></i><span>Move as one</span></section>
+      <section className="about-section">
+        <div className="section-heading">
+          <p className="eyebrow"><span></span> About ChamaHub</p>
+          <h2>Built for the way<br /><em>modern chamas save.</em></h2>
+        </div>
+        <div className="about-copy">
+          <p>ChamaHub is a digital platform for chamas, savings circles, and community groups that want to manage their money with clarity and trust. Instead of relying on scattered WhatsApp messages, handwritten records, or confusing spreadsheets, members can track contributions, monitor balances, and stay aligned on shared goals in one place.</p>
+          <p>Whether the group is saving for rent, a business investment, school fees, a home project, or a shared milestone, ChamaHub gives every member visibility into what is happening, what has been paid, and what still needs to be done. It brings accountability, transparency, and momentum to the way people save together.</p>
+        </div>
+      </section>
       <section className="feature-section" id="features"><div className="section-heading"><p className="eyebrow"><span></span> Everything in one place</p><h2>A better rhythm for<br /><em>shared money.</em></h2></div><div className="feature-grid"><article><span className="feature-number">01</span><h3>See the full picture</h3><p>Know exactly what is in, what is out, and what is next. No more spreadsheets hiding in someone&apos;s phone.</p><button className="feature-link" onClick={() => requestEntry('dashboard')}>Explore finances <span>↗</span></button></article><article><span className="feature-number">02</span><h3>Keep everyone in sync</h3><p>Contributions, reminders, and decisions stay visible to the whole group. Trust grows when everyone can see.</p><button className="feature-link" onClick={() => requestEntry('dashboard')}>Meet your members <span>↗</span></button></article><article><span className="feature-number">03</span><h3>Make goals feel real</h3><p>Turn a shared idea into a tracked goal, with progress your chama can feel every time you open the app.</p><button className="feature-link" onClick={() => requestEntry('setup')}>Set a goal <span>↗</span></button></article></div></section>
       <section className="bottom-cta" id="how-it-works"><div><p className="eyebrow"><span></span> Your next chapter starts here</p><h2>Ready to move<br /><em>as one?</em></h2></div><button className="primary-button light-button" onClick={() => requestEntry('dashboard')}>Open your dashboard <span aria-hidden="true">↗</span></button></section>
       <footer><a className="brand" href="#home"><span className="brand-mark">C</span><span>ChamaHub</span></a><span>Small steps. Shared wins.</span><span>© 2026 ChamaHub</span></footer>
