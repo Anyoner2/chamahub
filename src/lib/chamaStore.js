@@ -193,7 +193,7 @@ export async function getChamaJoinRequests(chamaId) {
 
   const { data, error } = await supabase
     .from('chama_join_requests')
-    .select('id, user_id, requester_name, requester_email, status, created_at')
+    .select('id, user_id, requester_name, requester_email, requester_phone_number, requester_id_number, status, created_at')
     .eq('chama_id', chamaId)
     .eq('status', 'pending')
     .order('created_at', { ascending: false })

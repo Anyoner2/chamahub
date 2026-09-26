@@ -85,3 +85,16 @@ begin
     alter publication supabase_realtime add table public.chamas;
   end if;
 end $$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'chama_join_requests'
+  ) then
+    alter publication supabase_realtime add table public.chama_join_requests;
+  end if;
+end $$;
