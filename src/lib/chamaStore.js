@@ -63,7 +63,7 @@ export async function getChamaRecord(id) {
 
   const { data, error } = await supabase
     .from('chamas')
-    .select('id, name, city, goal, members, contributions, balance')
+    .select('id, name, city, goal, members, contributions, balance, owner_id')
     .eq('id', id)
     .single()
 
@@ -80,7 +80,7 @@ export async function getChamaRecord(id) {
       .from('chamas')
       .update({ members: cleanedMembers, balance: Number(data.balance) === 428500 ? 0 : data.balance, contributions: Number(data.balance) === 428500 ? [] : data.contributions, goal: Number(data.balance) === 428500 ? goal : data.goal, updated_at: new Date().toISOString() })
       .eq('id', id)
-      .select('id, name, city, goal, members, contributions, balance')
+      .select('id, name, city, goal, members, contributions, balance, owner_id')
       .single()
 
     if (!cleanupError && cleanedData) return cleanedData
