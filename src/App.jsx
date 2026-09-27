@@ -17,6 +17,24 @@ const initialMembers = [
 ]
 
 const defaultGoal = { name: 'New meeting space', target: 500000, saved: 360000 }
+const emptyGoal = { name: 'No shared goal yet', target: 0, saved: 0 }
+
+function archiveCompletedGoal(candidate, currentAchievements) {
+  if (!candidate?.target || candidate.saved < candidate.target) {
+    return { goal: candidate, achievements: currentAchievements }
+  }
+
+  const achievement = {
+    ...candidate,
+    id: candidate.id || crypto.randomUUID(),
+    achieved_at: candidate.achieved_at || new Date().toISOString(),
+  }
+  const achievements = currentAchievements.some((item) => item.id && item.id === achievement.id)
+    ? currentAchievements
+    : [...currentAchievements, achievement]
+
+  return { goal: emptyGoal, achievements }
+}
 
 function Dashboard({ onBack, onProfileUpdate, onSignOut, onChamaSelect, chamaName, user, chamaId }) {
   const hasChama = Boolean(chamaId)
@@ -31,6 +49,10 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, onChamaSelect, chamaNam
   })
 
   const [chamaOwnerId, setChamaOwnerId] = useState(null)
+  const [achievements, setAchievements] = useState(() => {
+    const saved = localStorage.getItem('chamahub-achievements')
+    return saved && (!isSupabaseConfigured || hasChama) ? JSON.parse(saved) : []
+  })
   const [balance, setBalance] = useState(() => isSupabaseConfigured && !hasChama ? 0 : Number(localStorage.getItem('chamahub-balance')) || 428500)
   const [goal, setGoal] = useState(() => {
     const saved = localStorage.getItem('chamahub-goal')
@@ -66,6 +88,7 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, onChamaSelect, chamaNam
     localStorage.setItem('chamahub-members', JSON.stringify(dashboardMembers))
     localStorage.setItem('chamahub-balance', String(balance))
     localStorage.setItem('chamahub-goal', JSON.stringify(goal))
+    localStorage.setItem('chamahub-achievements', JSON.stringify(achievements))
 
     if (remoteUpdateRef.current) {
       remoteUpdateRef.current = false
@@ -79,10 +102,11 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, onChamaSelect, chamaNam
         goal,
         members: dashboardMembers,
         contributions: dashboardContributions,
+        achievements,
         balance,
       }).catch(() => console.error('Unable to sync chama changes with Supabase.'))
     }
-  }, [balance, chamaId, chamaName, dashboardContributions, dashboardMembers, goal, isRemoteReady])
+  }, [achievements, balance, chamaId, chamaName, dashboardContributions, dashboardMembers, goal, isRemoteReady])
 
   useEffect(() => {
     if (!isSupabaseConfigured || !chamaId) {
@@ -93,12 +117,15 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, onChamaSelect, chamaNam
     setIsRemoteReady(false)
     getChamaRecord(chamaId).then((record) => {
       if (!record) return
-      remoteUpdateRef.current = true
+      const goalWasAlreadyComplete = record.goal?.target > 0 && record.goal.saved >= record.goal.target
+      remoteUpdateRef.current = !goalWasAlreadyComplete
       setDashboardContributions(record.contributions || [])
       setDashboardMembers(record.members || [])
       setChamaOwnerId(record.owner_id || null)
       setBalance(Number(record.balance) || 0)
-      setGoal(record.goal || { name: 'No shared goal yet', target: 0, saved: 0 })
+      const completion = archiveCompletedGoal(record.goal || emptyGoal, record.achievements || [])
+      setGoal(completion.goal)
+      setAchievements(completion.achievements)
     }).catch(() => {
       setNotice('We could not load this chama from Supabase.')
     }).finally(() => setIsRemoteReady(true))
@@ -117,7 +144,9 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, onChamaSelect, chamaNam
         setDashboardMembers(updatedChama.members || [])
         setChamaOwnerId(updatedChama.owner_id || null)
         setBalance(updatedChama.balance || 0)
-        setGoal(updatedChama.goal || { name: 'No shared goal yet', target: 0, saved: 0 })
+        const completion = archiveCompletedGoal(updatedChama.goal || emptyGoal, updatedChama.achievements || [])
+        setGoal(completion.goal)
+        setAchievements(completion.achievements)
       })
       .subscribe()
 
@@ -186,9 +215,11 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, onChamaSelect, chamaNam
 
     event.preventDefault()
     if (name && target > 0 && saved >= 0 && saved <= target) {
-      setGoal({ name, target, saved })
+      const completion = archiveCompletedGoal({ id: goal.id || crypto.randomUUID(), name, target, saved }, achievements)
+      setGoal(completion.goal)
+      setAchievements(completion.achievements)
       setShowGoalForm(false)
-      setNotice('Shared goal updated successfully.')
+      setNotice(completion.goal.target ? 'Shared goal updated successfully.' : `${name} moved to achievements.`)
       setCelebrating(true)
       window.setTimeout(() => setCelebrating(false), 900)
     } else {
@@ -235,16 +266,21 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, onChamaSelect, chamaNam
             setBalance(updatedState.balance)
             setDashboardContributions(updatedState.contributions)
             setGoal(updatedState.goal)
+            setAchievements(updatedState.achievements)
             setDashboardMembers((currentMembers) => currentMembers.map((item) => item.name === member.name ? { ...item, status: 'Paid this month' } : item))
           }
         } else {
           setBalance((currentBalance) => currentBalance + amount)
           setDashboardMembers((currentMembers) => currentMembers.map((item) => item.name === member.name ? { ...item, status: 'Paid this month' } : item))
           setDashboardContributions((currentContributions) => [newContribution, ...currentContributions])
-          setGoal((currentGoal) => ({
-            ...currentGoal,
-            saved: Math.min(currentGoal.target, (currentGoal.saved || 0) + amount),
-          }))
+          const nextGoal = {
+            ...goal,
+            id: goal.id || crypto.randomUUID(),
+            saved: Math.min(goal.target, (goal.saved || 0) + amount),
+          }
+          const completion = archiveCompletedGoal(nextGoal, achievements)
+          setGoal(completion.goal)
+          setAchievements(completion.achievements)
         }
 
         setShowContributionForm(false)
@@ -422,6 +458,10 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, onChamaSelect, chamaNam
           <article className="dashboard-card contribution-panel"><div className="panel-heading"><div><span className="card-kicker">Activity</span><h2>Recent contributions</h2></div><button className="quiet-button" onClick={() => setDetailView('activity')}>View all <span>↗</span></button></div><div className="contribution-list">{dashboardContributions.slice(0, 3).map((contribution, index) => <div className="contribution-row" key={`${contribution.member}-${contribution.date}-${index}`}><span className={`avatar ${contribution.tone}`}>{contribution.initials}</span><div><strong>{contribution.member}</strong><small>{contribution.date}{contribution.purpose ? ` · ${contribution.purpose}` : ''}</small></div><b>{contribution.amount}</b></div>)}</div></article>
           <article className="dashboard-card members-panel"><div className="panel-heading"><div><span className="card-kicker">Your circle</span><h2>Members <span className="count-badge">{dashboardMembers.length}</span></h2></div>{chamaId && <button className="quiet-button" onClick={() => setDetailView('members')}>Manage <span>↗</span></button>}</div><p className="chairman-label">Chairman: <strong>{isChairman ? 'You' : 'Chama chairman'}</strong></p>{dashboardMembers.some((member) => member.status.includes('Awaiting') || member.status.includes('Reminder')) && <p className="member-reminder-bar">{dashboardMembers.filter((member) => member.status.includes('Awaiting') || member.status.includes('Reminder')).length} members need a follow-up this month.</p>}<div className="member-list">{dashboardMembers.slice(0, 4).map((member) => <div className="member-row" key={member.name}><span className={`avatar ${member.tone}`}>{member.initials}</span><div><strong>{member.name}</strong>{member.role && <small className="member-role">{member.role}</small>}<small className={member.status.startsWith('Due') || member.status.includes('Reminder') || member.status.includes('Awaiting') ? 'due-status' : ''}>{member.status}</small></div>{chamaId && <button type="button" className="remind-button small" onClick={() => handleReminder(member.name)}>Remind</button>}</div>)}</div></article>
         </div>
+        <section className="achievements-section" aria-labelledby="achievements-title">
+          <div className="panel-heading"><div><span className="card-kicker">Milestones</span><h2 id="achievements-title">Achievements <span className="count-badge">{achievements.length}</span></h2></div></div>
+          {achievements.length ? <div className="achievements-list">{achievements.slice().reverse().map((achievement) => <article className="achievement-row" key={achievement.id}><span className="achievement-mark" aria-hidden="true">✓</span><div><strong>{achievement.name}</strong><small>Target reached · KES {Number(achievement.target).toLocaleString('en-KE')}{achievement.achieved_at ? ` · ${new Date(achievement.achieved_at).toLocaleDateString('en-KE')}` : ''}</small></div></article>)}</div> : <p className="achievements-empty">Completed goals will appear here.</p>}
+        </section>
       </section>
 
       {showContributionForm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowContributionForm(false) }}><form className="contribution-modal" onSubmit={handleContribution}><button type="button" className="modal-close" aria-label="Close contribution form" onClick={() => setShowContributionForm(false)}>×</button><span className="card-kicker">Live chama update</span><h2>Make a contribution</h2><p>Choose the chama and explain what this money is for.</p><label>Chama<select name="chama-id" defaultValue={chamaId}>{contributionChamaList.map((chama) => <option key={chama.id} value={chama.id}>{chama.name}</option>)}</select></label><label>Member<select name="member" defaultValue={dashboardMembers[0]?.name || ''}>{dashboardMembers.map((member) => <option key={member.name} value={member.name}>{member.name}</option>)}</select></label><label>Amount<input name="amount" type="text" inputMode="numeric" defaultValue="KES 5,000" required /></label><label>What is this money for?<input name="purpose" type="text" placeholder="e.g. Monthly contribution or school fees" required /></label><label>Payment method<select name="method" defaultValue="M-Pesa"><option value="M-Pesa">M-Pesa</option><option value="Bank transfer">Bank transfer</option><option value="Cash">Cash</option><option value="Wallet">Wallet</option></select></label><button className="primary-button" type="submit">Sync contribution <span>↗</span></button></form></div>}
@@ -617,11 +657,11 @@ function App() {
       return
     }
 
-    const goal = { name: goalName, target, saved: 0 }
+    const goal = { id: crypto.randomUUID(), name: goalName, target, saved: 0 }
     const localState = isSupabaseConfigured
-      ? { name, city, goal, members: [], contributions: [], balance: 0 }
+      ? { name, city, goal, members: [], contributions: [], achievements: [], balance: 0 }
       : getLocalChamaState()
-    saveLocalChamaState({ ...localState, name, city, goal })
+    saveLocalChamaState({ ...localState, name, city, goal, achievements: [] })
     setChamaName(name)
     setMemberSetupError('')
     setShowOnboarding(false)

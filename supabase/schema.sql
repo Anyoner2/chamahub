@@ -8,12 +8,14 @@ create table if not exists public.chamas (
   goal jsonb not null,
   members jsonb not null default '[]'::jsonb,
   contributions jsonb not null default '[]'::jsonb,
+  achievements jsonb not null default '[]'::jsonb,
   balance integer not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 alter table public.chamas add column if not exists owner_id uuid references auth.users(id) on delete cascade;
+alter table public.chamas add column if not exists achievements jsonb not null default '[]'::jsonb;
 
 create table if not exists public.chama_join_requests (
   id uuid primary key default gen_random_uuid(),

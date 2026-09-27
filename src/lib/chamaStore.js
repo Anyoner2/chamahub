@@ -6,6 +6,7 @@ const localKeys = {
   goal: 'chamahub-goal',
   members: 'chamahub-members',
   contributions: 'chamahub-contributions',
+  achievements: 'chamahub-achievements',
   balance: 'chamahub-balance',
 }
 
@@ -32,6 +33,7 @@ export function getLocalChamaState() {
     goal: readLocal(localKeys.goal, null),
     members: readLocal(localKeys.members, null),
     contributions: readLocal(localKeys.contributions, null),
+    achievements: readLocal(localKeys.achievements, []),
     balance: storedBalance === null ? 0 : Number(storedBalance) || 0,
   }
 }
@@ -42,6 +44,7 @@ export function saveLocalChamaState(state) {
   writeLocal(localKeys.goal, state.goal)
   writeLocal(localKeys.members, state.members)
   writeLocal(localKeys.contributions, state.contributions)
+  writeLocal(localKeys.achievements, state.achievements || [])
   writeLocal(localKeys.balance, String(state.balance))
 }
 
@@ -50,7 +53,7 @@ export async function createChamaRecord({ name, city, goal, members, ownerId }) 
 
   const { data, error } = await supabase
     .from('chamas')
-    .insert({ name, city, goal, members, contributions: [], balance: 0, owner_id: ownerId })
+    .insert({ name, city, goal, members, contributions: [], achievements: [], balance: 0, owner_id: ownerId })
     .select('id')
     .single()
 
@@ -63,7 +66,7 @@ export async function getChamaRecord(id) {
 
   const { data, error } = await supabase
     .from('chamas')
-    .select('id, name, city, goal, members, contributions, balance, owner_id')
+    .select('id, name, city, goal, members, contributions, achievements, balance, owner_id')
     .eq('id', id)
     .single()
 
@@ -80,7 +83,7 @@ export async function getChamaRecord(id) {
       .from('chamas')
       .update({ members: cleanedMembers, balance: Number(data.balance) === 428500 ? 0 : data.balance, contributions: Number(data.balance) === 428500 ? [] : data.contributions, goal: Number(data.balance) === 428500 ? goal : data.goal, updated_at: new Date().toISOString() })
       .eq('id', id)
-      .select('id, name, city, goal, members, contributions, balance, owner_id')
+      .select('id, name, city, goal, members, contributions, achievements, balance, owner_id')
       .single()
 
     if (!cleanupError && cleanedData) return cleanedData
@@ -113,6 +116,7 @@ export async function saveChamaRecord(id, state) {
       goal: state.goal,
       members: state.members,
       contributions: state.contributions,
+      achievements: state.achievements || [],
       balance: state.balance,
       updated_at: new Date().toISOString(),
     })
@@ -126,7 +130,7 @@ export async function recordChamaContribution(id, contribution, amount) {
 
   const { data: chama, error: fetchError } = await supabase
     .from('chamas')
-    .select('contributions, balance, goal')
+    .select('contributions, achievements, balance, goal')
     .eq('id', id)
     .single()
 
@@ -142,6 +146,16 @@ export async function recordChamaContribution(id, contribution, amount) {
     contributions: [contribution, ...contributions],
     balance: (Number(chama.balance) || 0) + amount,
     goal: nextGoal,
+    achievements: Array.isArray(chama.achievements) ? chama.achievements : [],
+  }
+
+  if (nextGoal.target > 0 && nextGoal.saved >= nextGoal.target) {
+    nextState.achievements = [...nextState.achievements, {
+      ...nextGoal,
+      id: nextGoal.id || crypto.randomUUID(),
+      achieved_at: new Date().toISOString(),
+    }]
+    nextState.goal = { name: 'No shared goal yet', target: 0, saved: 0 }
   }
 
   const { error: updateError } = await supabase
