@@ -167,6 +167,60 @@ export async function recordChamaContribution(id, contribution, amount) {
   return nextState
 }
 
+export async function submitChamaPayment(payment) {
+  if (!supabase) throw new Error('Supabase is not configured.')
+
+  const { data, error } = await supabase.functions.invoke('payments', {
+    body: { action: 'create', ...payment },
+  })
+
+  if (error) throw error
+  if (data?.error) throw new Error(data.error)
+  return data
+}
+
+export async function getPendingBankPayments(chamaId) {
+  if (!supabase || !chamaId) return []
+
+  const { data, error } = await supabase
+    .from('payments')
+    .select('id, amount, member_name, purpose, bank_reference, created_at')
+    .eq('chama_id', chamaId)
+    .eq('method', 'Bank transfer')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: true })
+
+  if (error) throw error
+  return data || []
+}
+
+export async function getUserPayments(userId, chamaId) {
+  if (!supabase || !userId || !chamaId) return []
+
+  const { data, error } = await supabase
+    .from('payments')
+    .select('id, amount, member_name, method, status, receipt_number, created_at')
+    .eq('user_id', userId)
+    .eq('chama_id', chamaId)
+    .order('created_at', { ascending: false })
+    .limit(5)
+
+  if (error) throw error
+  return data || []
+}
+
+export async function verifyBankPayment(paymentId) {
+  if (!supabase) throw new Error('Supabase is not configured.')
+
+  const { data, error } = await supabase.functions.invoke('payments', {
+    body: { action: 'verify-bank', paymentId },
+  })
+
+  if (error) throw error
+  if (data?.error) throw new Error(data.error)
+  return data
+}
+
 export async function searchChamas(query) {
   const trimmedQuery = query.trim()
   if (!isSupabaseConfigured || !trimmedQuery) return []

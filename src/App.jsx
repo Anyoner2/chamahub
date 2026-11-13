@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
-import { createChamaRecord, getChamaJoinRequests, getChamaRecord, getLocalChamaState, getUserJoinRequests, getUserMemberships, getUserOwnedChamas, recordChamaContribution, requestToJoinChama, saveChamaRecord, saveLocalChamaState, searchChamas, updateJoinRequest } from './lib/chamaStore'
+import { createChamaRecord, getChamaJoinRequests, getChamaRecord, getLocalChamaState, getPendingBankPayments, getUserJoinRequests, getUserMemberships, getUserOwnedChamas, getUserPayments, requestToJoinChama, saveChamaRecord, saveLocalChamaState, searchChamas, submitChamaPayment, updateJoinRequest, verifyBankPayment } from './lib/chamaStore'
 import { isSupabaseConfigured, sendPasswordReset, signInWithPassword, signOut, signUpWithPassword, supabase, updateProfile } from './lib/supabase'
+
+const bankTransferDetails = {
+  bank: import.meta.env.VITE_BANK_NAME || '',
+  accountName: import.meta.env.VITE_BANK_ACCOUNT_NAME || '',
+  accountNumber: import.meta.env.VITE_BANK_ACCOUNT_NUMBER || '',
+  branch: import.meta.env.VITE_BANK_BRANCH || '',
+}
+const hasBankTransferDetails = Object.values(bankTransferDetails).every(Boolean)
 
 const contributions = [
   { member: 'Amina M.', initials: 'AM', date: 'Today, 09:42', amount: 'KES 5,000', tone: 'coral' },
@@ -60,6 +68,11 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, onChamaSelect, chamaNam
   })
   const [isRemoteReady, setIsRemoteReady] = useState(() => !isSupabaseConfigured || !chamaId)
   const [showContributionForm, setShowContributionForm] = useState(false)
+  const [paymentMethod, setPaymentMethod] = useState('M-Pesa')
+  const [submittingPayment, setSubmittingPayment] = useState(false)
+  const [pendingBankPayments, setPendingBankPayments] = useState({ chamaId: null, items: [] })
+  const [userPayments, setUserPayments] = useState({ chamaId: null, items: [] })
+  const [verifyingPaymentId, setVerifyingPaymentId] = useState('')
   const [showGoalForm, setShowGoalForm] = useState(false)
   const [showMemberForm, setShowMemberForm] = useState(false)
   const [detailView, setDetailView] = useState(null)
@@ -190,6 +203,52 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, onChamaSelect, chamaNam
     }
   }, [chamaId])
 
+  useEffect(() => {
+    if (!chamaId || !isChairman || !isSupabaseConfigured || !supabase) {
+      return undefined
+    }
+
+    let active = true
+    const refreshPendingPayments = () => getPendingBankPayments(chamaId).then((payments) => {
+      if (active) setPendingBankPayments({ chamaId, items: payments })
+    }).catch(() => {
+      if (active) setNotice('We could not load pending bank transfers.')
+    })
+    refreshPendingPayments()
+    const channel = supabase
+      .channel(`pending-payments-${chamaId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments', filter: `chama_id=eq.${chamaId}` }, refreshPendingPayments)
+      .subscribe()
+
+    return () => {
+      active = false
+      supabase.removeChannel(channel)
+    }
+  }, [chamaId, isChairman])
+
+  useEffect(() => {
+    if (!chamaId || !isSupabaseConfigured || !supabase) {
+      return undefined
+    }
+
+    let active = true
+    const refreshUserPayments = () => getUserPayments(user.id, chamaId).then((payments) => {
+      if (active) setUserPayments({ chamaId, items: payments })
+    }).catch(() => {
+      if (active) setNotice('We could not load your payment status.')
+    })
+    refreshUserPayments()
+    const channel = supabase
+      .channel(`user-payments-${user.id}-${chamaId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments', filter: `user_id=eq.${user.id}` }, refreshUserPayments)
+      .subscribe()
+
+    return () => {
+      active = false
+      supabase.removeChannel(channel)
+    }
+  }, [chamaId, user.id])
+
   function parseCurrency(value) {
     return Number(String(value).replace(/[^0-9]/g, '')) || 0
   }
@@ -199,12 +258,6 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, onChamaSelect, chamaNam
     if (!parts.length) return 'CH'
     if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
     return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
-  }
-
-  function shortName(name) {
-    const parts = String(name).trim().split(/\s+/).filter(Boolean)
-    if (parts.length === 1) return parts[0]
-    return `${parts[0]} ${parts[parts.length - 1][0]}.`
   }
 
   function handleGoal(event) {
@@ -230,7 +283,6 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, onChamaSelect, chamaNam
   async function handleContribution(event) {
     event.preventDefault()
     if (!chamaId) {
-      setShowContributionForm(false)
       setNotice('Create or join a chama before recording a contribution.')
       return
     }
@@ -239,64 +291,73 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, onChamaSelect, chamaNam
     const amount = parseCurrency(formData.get('amount'))
     const memberName = String(formData.get('member') || '').trim()
     const targetChamaId = String(formData.get('chama-id') || chamaId).trim()
-    const method = String(formData.get('method') || 'M-Pesa').trim()
+    const method = String(formData.get('method') || paymentMethod).trim()
     const purpose = String(formData.get('purpose') || '').trim()
+    const phoneNumber = String(formData.get('phone-number') || '').trim()
+    const bankReference = String(formData.get('bank-reference') || '').trim()
     const member = dashboardMembers.find((item) => item.name === memberName)
 
-    if (amount > 0 && member && targetChamaId && purpose) {
-      const newContribution = {
-        member: shortName(member.name),
-        initials: member.initials,
-        date: new Date().toLocaleString('en-KE', {
-          day: 'numeric',
-          month: 'short',
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-        amount: `KES ${amount.toLocaleString('en-KE')}`,
-        tone: member.tone,
-        method,
-        purpose,
-      }
-
-      try {
-        if (isSupabaseConfigured) {
-          const updatedState = await recordChamaContribution(targetChamaId, newContribution, amount)
-          if (targetChamaId === chamaId && updatedState) {
-            setBalance(updatedState.balance)
-            setDashboardContributions(updatedState.contributions)
-            setGoal(updatedState.goal)
-            setAchievements(updatedState.achievements)
-            setDashboardMembers((currentMembers) => currentMembers.map((item) => item.name === member.name ? { ...item, status: 'Paid this month' } : item))
-          }
-        } else {
-          setBalance((currentBalance) => currentBalance + amount)
-          setDashboardMembers((currentMembers) => currentMembers.map((item) => item.name === member.name ? { ...item, status: 'Paid this month' } : item))
-          setDashboardContributions((currentContributions) => [newContribution, ...currentContributions])
-          const nextGoal = {
-            ...goal,
-            id: goal.id || crypto.randomUUID(),
-            saved: Math.min(goal.target, (goal.saved || 0) + amount),
-          }
-          const completion = archiveCompletedGoal(nextGoal, achievements)
-          setGoal(completion.goal)
-          setAchievements(completion.achievements)
-        }
-
-        setShowContributionForm(false)
-        setNotice(`${member.name} contributed KES ${amount.toLocaleString('en-KE')} to ${contributionChamaList.find((chama) => chama.id === targetChamaId)?.name || 'the chama'} for ${purpose}.`)
-        setCelebrating(true)
-        window.setTimeout(() => setCelebrating(false), 900)
-        return
-      } catch {
-        setShowContributionForm(false)
-        setNotice('We could not record that contribution. Check your chama permissions and try again.')
-        return
-      }
+    if (!isSupabaseConfigured) {
+      setNotice('Configure Supabase and deploy the payment function before accepting payments.')
+      return
+    }
+    if (method === 'Bank transfer' && !hasBankTransferDetails) {
+      setNotice('Bank transfer details are not configured. Contact the chama chairman before sending money.')
+      return
+    }
+    if (!amount || !member || !targetChamaId || !purpose || (method === 'M-Pesa' && !phoneNumber) || (method === 'Bank transfer' && !bankReference)) {
+      setNotice('Enter a valid amount, purpose, and payment details.')
+      return
     }
 
-    setShowContributionForm(false)
-    setNotice('Choose a chama, enter a purpose, and provide a valid contribution amount and member.')
+    setSubmittingPayment(true)
+    try {
+      await submitChamaPayment({
+        chamaId: targetChamaId,
+        memberName: member.name,
+        amount,
+        purpose,
+        method,
+        phoneNumber,
+        bankReference,
+      })
+      if (targetChamaId === chamaId) {
+        getUserPayments(user.id, chamaId).then((payments) => setUserPayments({ chamaId, items: payments })).catch(() => {
+          setNotice('Payment started, but we could not refresh its status.')
+        })
+      }
+      setShowContributionForm(false)
+      setNotice(method === 'M-Pesa'
+        ? `M-Pesa prompt sent to ${phoneNumber}. The chama balance updates after Safaricom confirms payment.`
+        : `Bank transfer submitted for verification. The chama balance will update after the chairman confirms it.`)
+      if (method === 'Bank transfer' && targetChamaId === chamaId && isChairman) {
+        getPendingBankPayments(chamaId).then((payments) => setPendingBankPayments({ chamaId, items: payments })).catch(() => {
+          setNotice('Bank transfer submitted, but we could not refresh the pending transfer list.')
+        })
+      }
+    } catch (error) {
+      setNotice(error.message || 'We could not start that payment. Check your payment setup and try again.')
+    } finally {
+      setSubmittingPayment(false)
+    }
+  }
+
+  async function handleBankPaymentVerification(payment) {
+    setVerifyingPaymentId(payment.id)
+    try {
+      await verifyBankPayment(payment.id)
+      setPendingBankPayments((currentPayments) => ({
+        ...currentPayments,
+        items: currentPayments.items.filter((item) => item.id !== payment.id),
+      }))
+      setNotice(`Bank transfer from ${payment.member_name} verified and added to the chama balance.`)
+      setCelebrating(true)
+      window.setTimeout(() => setCelebrating(false), 900)
+    } catch (error) {
+      setNotice(error.message || 'We could not verify that bank transfer.')
+    } finally {
+      setVerifyingPaymentId('')
+    }
   }
 
   function handleMember(event) {
@@ -378,6 +439,12 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, onChamaSelect, chamaNam
     chamaId && { id: chamaId, name: chamaName },
     ...joinedChamaList,
   ].filter((chama, index, list) => chama?.id && list.findIndex((item) => item.id === chama.id) === index)
+  const userMember = dashboardMembers.find((member) =>
+    member.user_id === user.id ||
+    (user.email && member.email?.toLowerCase() === user.email.toLowerCase()) ||
+    (user.phoneNumber && member.phone_number === user.phoneNumber))
+  const visiblePendingBankPayments = pendingBankPayments.chamaId === chamaId ? pendingBankPayments.items : []
+  const visibleUserPayments = userPayments.chamaId === chamaId ? userPayments.items : []
 
   async function handleChamaSearch(event) {
     event.preventDefault()
@@ -458,13 +525,43 @@ function Dashboard({ onBack, onProfileUpdate, onSignOut, onChamaSelect, chamaNam
           <article className="dashboard-card contribution-panel"><div className="panel-heading"><div><span className="card-kicker">Activity</span><h2>Recent contributions</h2></div><button className="quiet-button" onClick={() => setDetailView('activity')}>View all <span>↗</span></button></div><div className="contribution-list">{dashboardContributions.slice(0, 3).map((contribution, index) => <div className="contribution-row" key={`${contribution.member}-${contribution.date}-${index}`}><span className={`avatar ${contribution.tone}`}>{contribution.initials}</span><div><strong>{contribution.member}</strong><small>{contribution.date}{contribution.purpose ? ` · ${contribution.purpose}` : ''}</small></div><b>{contribution.amount}</b></div>)}</div></article>
           <article className="dashboard-card members-panel"><div className="panel-heading"><div><span className="card-kicker">Your circle</span><h2>Members <span className="count-badge">{dashboardMembers.length}</span></h2></div>{chamaId && <button className="quiet-button" onClick={() => setDetailView('members')}>Manage <span>↗</span></button>}</div><p className="chairman-label">Chairman: <strong>{isChairman ? 'You' : 'Chama chairman'}</strong></p>{dashboardMembers.some((member) => member.status.includes('Awaiting') || member.status.includes('Reminder')) && <p className="member-reminder-bar">{dashboardMembers.filter((member) => member.status.includes('Awaiting') || member.status.includes('Reminder')).length} members need a follow-up this month.</p>}<div className="member-list">{dashboardMembers.slice(0, 4).map((member) => <div className="member-row" key={member.name}><span className={`avatar ${member.tone}`}>{member.initials}</span><div><strong>{member.name}</strong>{member.role && <small className="member-role">{member.role}</small>}<small className={member.status.startsWith('Due') || member.status.includes('Reminder') || member.status.includes('Awaiting') ? 'due-status' : ''}>{member.status}</small></div>{chamaId && <button type="button" className="remind-button small" onClick={() => handleReminder(member.name)}>Remind</button>}</div>)}</div></article>
         </div>
+        {visibleUserPayments.length > 0 && <section className="dashboard-card payment-status-panel" aria-labelledby="payment-status-title"><div className="panel-heading"><div><span className="card-kicker">Your payments</span><h2 id="payment-status-title">Payment status</h2></div></div><div className="request-list">{visibleUserPayments.map((payment) => <article className="request-row" key={payment.id}><div><strong>{payment.method} · KES {Number(payment.amount).toLocaleString('en-KE')}</strong><small>{payment.status === 'paid' ? `Confirmed${payment.receipt_number ? ` · Receipt ${payment.receipt_number}` : ''}` : payment.status === 'failed' ? 'Not confirmed · start a new payment to retry' : 'Awaiting payment confirmation'} · {new Date(payment.created_at).toLocaleDateString('en-KE')}</small></div><span className={`payment-status ${payment.status}`}>{payment.status}</span></article>)}</div></section>}
+        {isChairman && visiblePendingBankPayments.length > 0 && <section className="dashboard-card pending-payments" aria-labelledby="pending-payments-title"><div className="panel-heading"><div><span className="card-kicker">Needs review</span><h2 id="pending-payments-title">Bank transfers <span className="count-badge">{visiblePendingBankPayments.length}</span></h2></div></div><p>Confirm each deposit against your bank statement before adding it to the chama balance.</p><div className="request-list">{visiblePendingBankPayments.map((payment) => <article className="request-row" key={payment.id}><div><strong>{payment.member_name} · KES {Number(payment.amount).toLocaleString('en-KE')}</strong><small>{payment.purpose} · Ref: {payment.bank_reference} · {new Date(payment.created_at).toLocaleDateString('en-KE')}</small></div><button className="approve-button" disabled={verifyingPaymentId === payment.id} onClick={() => handleBankPaymentVerification(payment)}>{verifyingPaymentId === payment.id ? 'Verifying...' : 'Verify deposit'}</button></article>)}</div></section>}
         <section className="achievements-section" aria-labelledby="achievements-title">
           <div className="panel-heading"><div><span className="card-kicker">Milestones</span><h2 id="achievements-title">Achievements <span className="count-badge">{achievements.length}</span></h2></div></div>
           {achievements.length ? <div className="achievements-list">{achievements.slice().reverse().map((achievement) => <article className="achievement-row" key={achievement.id}><span className="achievement-mark" aria-hidden="true">✓</span><div><strong>{achievement.name}</strong><small>Target reached · KES {Number(achievement.target).toLocaleString('en-KE')}{achievement.achieved_at ? ` · ${new Date(achievement.achieved_at).toLocaleDateString('en-KE')}` : ''}</small></div></article>)}</div> : <p className="achievements-empty">Completed goals will appear here.</p>}
         </section>
       </section>
 
-      {showContributionForm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowContributionForm(false) }}><form className="contribution-modal" onSubmit={handleContribution}><button type="button" className="modal-close" aria-label="Close contribution form" onClick={() => setShowContributionForm(false)}>×</button><span className="card-kicker">Live chama update</span><h2>Make a contribution</h2><p>Choose the chama and explain what this money is for.</p><label>Chama<select name="chama-id" defaultValue={chamaId}>{contributionChamaList.map((chama) => <option key={chama.id} value={chama.id}>{chama.name}</option>)}</select></label><label>Member<select name="member" defaultValue={dashboardMembers[0]?.name || ''}>{dashboardMembers.map((member) => <option key={member.name} value={member.name}>{member.name}</option>)}</select></label><label>Amount<input name="amount" type="text" inputMode="numeric" defaultValue="KES 5,000" required /></label><label>What is this money for?<input name="purpose" type="text" placeholder="e.g. Monthly contribution or school fees" required /></label><label>Payment method<select name="method" defaultValue="M-Pesa"><option value="M-Pesa">M-Pesa</option><option value="Bank transfer">Bank transfer</option><option value="Cash">Cash</option><option value="Wallet">Wallet</option></select></label><button className="primary-button" type="submit">Sync contribution <span>↗</span></button></form></div>}
+      {showContributionForm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !submittingPayment) setShowContributionForm(false) }}>
+        <form className="contribution-modal" onSubmit={handleContribution}>
+          <button type="button" className="modal-close" aria-label="Close contribution form" disabled={submittingPayment} onClick={() => setShowContributionForm(false)}>×</button>
+          <span className="card-kicker">Secure payment</span>
+          <h2>Make a contribution</h2>
+          <p>Your balance changes only after M-Pesa confirms payment or the chairman verifies a bank transfer.</p>
+          <label>Chama<select name="chama-id" defaultValue={chamaId}>{contributionChamaList.map((chama) => <option key={chama.id} value={chama.id}>{chama.name}</option>)}</select></label>
+          <label>Member<select name="member" defaultValue={userMember?.name || dashboardMembers[0]?.name || ''} required>{dashboardMembers.map((member) => <option key={member.name} value={member.name}>{member.name}</option>)}</select></label>
+          <label>Amount (KES)<input name="amount" type="number" min="1" step="1" defaultValue="5000" required /></label>
+          <label>What is this money for?<input name="purpose" type="text" maxLength="120" placeholder="e.g. Monthly contribution or school fees" required /></label>
+          <label>Payment method<select name="method" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option value="M-Pesa">M-Pesa STK Push</option><option value="Bank transfer">Bank transfer</option></select></label>
+          {paymentMethod === 'M-Pesa' ? <>
+            <label>M-Pesa phone number<input name="phone-number" type="tel" inputMode="tel" autoComplete="tel" defaultValue={user.phoneNumber || ''} placeholder="07XXXXXXXX or 2547XXXXXXXX" required /></label>
+            <p className="payment-help">A payment prompt will appear on this phone. Enter your M-Pesa PIN to approve it.</p>
+          </> : <>
+            <div className="bank-payment-details">
+              <strong>Bank transfer details</strong>
+              {hasBankTransferDetails
+                ? <><span>{bankTransferDetails.bank}</span><span>Account name: {bankTransferDetails.accountName}</span><span>Account number: {bankTransferDetails.accountNumber}</span><span>Branch: {bankTransferDetails.branch}</span></>
+                : <span>Bank details are not configured yet. Contact your chama chairman before transferring.</span>}
+            </div>
+            <label>Bank transaction reference<input name="bank-reference" type="text" maxLength="80" placeholder="Reference on your bank receipt" required /></label>
+            <p className="payment-help">Your transfer stays pending until the chama chairman confirms it against the bank statement.</p>
+          </>}
+          <button className="primary-button" type="submit" disabled={submittingPayment || !dashboardMembers.length || (paymentMethod === 'Bank transfer' && !hasBankTransferDetails)}>
+            {submittingPayment ? 'Starting payment...' : paymentMethod === 'M-Pesa' ? 'Send M-Pesa prompt' : 'Submit bank transfer'} <span>↗</span>
+          </button>
+        </form>
+      </div>}
       {showGoalForm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowGoalForm(false) }}><form className="contribution-modal" onSubmit={handleGoal}><button type="button" className="modal-close" aria-label="Close goal form" onClick={() => setShowGoalForm(false)}>×</button><span className="card-kicker">Shared goal</span><h2>Update your goal</h2><p>Give the chama a clear target to move toward together.</p><label>Goal name<input name="goal-name" type="text" defaultValue={goal.name} /></label><label>Target amount<input name="goal-target" type="text" inputMode="numeric" defaultValue={`KES ${goal.target.toLocaleString('en-KE')}`} /></label><label>Saved so far<input name="goal-saved" type="text" inputMode="numeric" defaultValue={`KES ${goal.saved.toLocaleString('en-KE')}`} /></label><button className="primary-button" type="submit">Save goal <span>↗</span></button></form></div>}
       {showMemberForm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowMemberForm(false) }}><form className="contribution-modal" onSubmit={handleMember}><button type="button" className="modal-close" aria-label="Close member form" onClick={() => setShowMemberForm(false)}>×</button><span className="card-kicker">New member</span><h2>Add to your circle</h2><p>Invite a new chama member and keep the group moving together.</p><label>Full name<input name="member-name" type="text" placeholder="e.g. Grace Waweru" /></label><label>Phone number<input name="member-phone" type="tel" placeholder="e.g. +254712345678" /></label><label>ID number<input name="member-id" type="text" placeholder="e.g. 12345678" /></label><button className="primary-button" type="submit">Add member <span>↗</span></button></form></div>}
       {detailView && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetailView(null) }}><section className="contribution-modal detail-modal" aria-labelledby="detail-title"><button type="button" className="modal-close" aria-label="Close details" onClick={() => setDetailView(null)}>×</button><span className="card-kicker">{detailView === 'activity' ? 'Activity log' : 'Your circle'}</span><h2 id="detail-title">{detailView === 'activity' ? 'All contributions' : 'Manage members'}</h2><p>{detailView === 'activity' ? 'A clear record of every recent payment.' : isChairman ? 'Assign the Treasurer and Vice Chairman for your chama.' : 'See the chama leadership and member contributions.'}</p>{detailView === 'activity' ? <div className="contribution-list detail-list">{dashboardContributions.map((contribution, index) => <div className="contribution-row" key={`${contribution.member}-${contribution.date}-${index}`}><span className={`avatar ${contribution.tone}`}>{contribution.initials}</span><div><strong>{contribution.member}</strong><small>{contribution.date}{contribution.purpose ? ` · ${contribution.purpose}` : ''}</small></div><b>{contribution.amount}</b></div>)}</div> : <div className="member-list detail-list"><button className="primary-button member-add-button" type="button" onClick={() => { setShowMemberForm(true); setDetailView(null) }}>+ Add member</button>{dashboardMembers.map((member) => <div className="member-row" key={member.name}><span className={`avatar ${member.tone}`}>{member.initials}</span><div><strong>{member.name}</strong>{member.role && <small className="member-role">{member.role}</small>}<small className={member.status.startsWith('Due') || member.status.includes('Reminder') || member.status.includes('Awaiting') ? 'due-status' : ''}>{member.status}</small></div><select className="member-role-select" aria-label={`Role for ${member.name}`} value={member.role || ''} disabled={!isChairman} onChange={(event) => handleRoleChange(member.name, event.target.value)}><option value="">Member</option><option value="Treasurer">Treasurer</option><option value="Vice Chairman">Vice Chairman</option></select><button className="remind-button" onClick={() => { setDetailView(null); handleReminder(member.name) }}>Remind</button></div>)}</div>}</section></div>}

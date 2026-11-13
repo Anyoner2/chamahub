@@ -10,6 +10,29 @@ To clear the current Supabase chama data before launch, run [supabase/reset-cham
 
 To enforce chairman-only chama creation on an existing project, also run [supabase/owner-controls.sql](supabase/owner-controls.sql) in the Supabase SQL editor. The chairman is the user who creates the chama; only that account can add members or approve join requests.
 
+## Payments setup
+
+The payment flow requires Supabase; it does not mark a contribution paid when a member merely submits a request. Run the updated [supabase/schema.sql](supabase/schema.sql), then deploy the Edge Function with `supabase functions deploy payments`.
+
+For M-Pesa, create a Daraja app and add these values as **Supabase Edge Function secrets** (never as `VITE_` variables or in the browser):
+
+- `DARAJA_ENV` (`sandbox` by default; use `production` only with approved live credentials)
+- `DARAJA_CONSUMER_KEY`, `DARAJA_CONSUMER_SECRET`
+- `DARAJA_SHORTCODE`, `DARAJA_PASSKEY`
+- `DARAJA_CALLBACK_URL` (`https://<project-ref>.supabase.co/functions/v1/payments`)
+- `DARAJA_CALLBACK_TOKEN` (a long random secret included in the callback URL)
+- Optionally, `DARAJA_TRANSACTION_TYPE` (`CustomerPayBillOnline` by default; use `CustomerBuyGoodsOnline` for a till)
+- Optionally, `APP_ORIGIN` to restrict the payment function's browser origin
+
+Add the receiving account details to the frontend deployment environment. These are public display values:
+
+- `VITE_BANK_NAME`
+- `VITE_BANK_ACCOUNT_NAME`
+- `VITE_BANK_ACCOUNT_NUMBER`
+- `VITE_BANK_BRANCH`
+
+Rebuild/redeploy the frontend after setting these values. Bank transfers remain pending until the chama chairman checks the bank statement and verifies the reference. Only then are they included in the balance. M-Pesa payments are included only after a successful Daraja callback. Test with Daraja sandbox credentials and test phone numbers before enabling production payments.
+
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
 Currently, two official plugins are available:
