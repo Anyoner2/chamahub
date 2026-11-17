@@ -5,5 +5,7 @@
       "args": ["-NoLogo"]
     }
   },
-  "terminal.integrated.defaultProfile.windows": "Windows PowerShell"
+  "terminal.integrated.defaultProfile.windows": "Windows PowerShell",
+  "deno.enable": true,
+  "deno.enablePaths": ["./supabase/functions"]
 }
